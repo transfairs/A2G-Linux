@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="de" data-lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2G-Linux: Anstoss 2 Gold unter Linux</title>
+<meta name="description" content="Anstoss 2 Gold unter Linux mit Lutris, Proton und Gamescope, so wie unter Windows. Original-CD 1999, CD 2007 und GOG.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23fff' stroke='%23222' stroke-width='2'/%3E%3Cpath d='M16 9l6 4.5-2.3 7h-7.4L10 13.5z' fill='%23222'/%3E%3C/svg%3E">
+<script>
+  // Set language and theme before the first paint
+  (function () {
+    var d = document.documentElement, lang = null, theme = null;
+    try { lang = localStorage.getItem("a2g-lang"); theme = localStorage.getItem("a2g-theme"); } catch (e) {}
+    if (lang !== "de" && lang !== "en") {
+      lang = (navigator.language || "en").toLowerCase().indexOf("de") === 0 ? "de" : "en";
+    }
+    d.setAttribute("data-lang", lang);
+    d.setAttribute("lang", lang);
+    if (theme === "light" || theme === "dark") d.setAttribute("data-theme", theme);
+  })();
+</script>
+<style>
+  :root {
+    --bg: #f6f7f4;
+    --surface: #ffffff;
+    --surface-2: #eef1ea;
+    --text: #1b1f1a;
+    --muted: #5a6357;
+    --border: #d9ded4;
+    --accent: #1f7a3a;
+    --accent-text: #ffffff;
+    --accent-soft: #e2f1e6;
+    --code-bg: #1d2320;
+    --code-text: #e7ece6;
+    --pitch-1: #2e8b45;
+    --pitch-2: #277a3c;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121513;
+      --surface: #1a1f1c;
+      --surface-2: #222824;
+      --text: #e6ebe5;
+      --muted: #9aa597;
+      --border: #2e3631;
+      --accent: #4cc06b;
+      --accent-text: #0d1a10;
+      --accent-soft: #1d3324;
+      --code-bg: #0b0e0c;
+      --code-text: #dfe6de;
+      --pitch-1: #1d5a2d;
+      --pitch-2: #184d26;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121513;
+    --surface: #1a1f1c;
+    --surface-2: #222824;
+    --text: #e6ebe5;
+    --muted: #9aa597;
+    --border: #2e3631;
+    --accent: #4cc06b;
+    --accent-text: #0d1a10;
+    --accent-soft: #1d3324;
+    --code-bg: #0b0e0c;
+    --code-text: #dfe6de;
+    --pitch-1: #1d5a2d;
+    --pitch-2: #184d26;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  }
+
+  html[data-lang="de"] body [lang="en"],
+  html[data-lang="en"] body [lang="de"] { display: none !important; }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, "SF Mono", "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  :not(pre) > code {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .05em .35em;
+    font-size: .9em;
+    overflow-wrap: anywhere;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+
+  /* Header */
+  header.top {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  header.top .wrap { display: flex; align-items: center; gap: 12px; height: 56px; }
+  .brand { font-weight: 700; color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  .brand svg { flex: none; }
+  nav.links { display: flex; gap: 18px; margin-left: 20px; }
+  nav.links a { color: var(--muted); text-decoration: none; font-size: .95rem; }
+  nav.links a:hover { color: var(--text); }
+  .controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .seg {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface);
+  }
+  .seg button {
+    border: 0; background: transparent; color: var(--muted); font: inherit; font-size: .85rem; font-weight: 600;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+  .icon-btn {
+    width: 34px; height: 34px; display: inline-grid; place-items: center;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer;
+  }
+  .icon-btn .sun { display: none; }
+  html[data-dark="1"] .icon-btn .sun { display: block; }
+  html[data-dark="1"] .icon-btn .moon { display: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Hero */
+  .hero {
+    background:
+      repeating-linear-gradient(90deg, var(--pitch-1) 0 80px, var(--pitch-2) 80px 160px);
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 24px; border: 2px solid rgba(255,255,255,.35); border-radius: 4px; pointer-events: none;
+  }
+  .hero::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: 220px; height: 220px; transform: translate(-50%,-50%);
+    border: 2px solid rgba(255,255,255,.25); border-radius: 50%; pointer-events: none;
+  }
+  .hero .wrap { position: relative; z-index: 1; padding-top: 72px; padding-bottom: 72px; text-align: center; }
+  .hero h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.15; margin: 0 0 14px; letter-spacing: -.01em; text-shadow: 0 2px 12px rgba(0,0,0,.25); }
+  .hero p.lead { font-size: clamp(1.05rem, 2.2vw, 1.25rem); max-width: 680px; margin: 0 auto 28px; opacity: .95; }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px;
+    font-weight: 600; text-decoration: none; border: 1px solid transparent;
+  }
+  .btn.primary { background: #fff; color: #17311f; }
+  .btn.ghost { color: #fff; border-color: rgba(255,255,255,.6); }
+  .btn:hover { filter: brightness(.95); }
+  .badges { margin-top: 26px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .badges span { background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.25); padding: 3px 10px; border-radius: 999px; font-size: .85rem; }
+
+  /* Sections */
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--border); }
+  h2 { font-size: 1.7rem; margin: 0 0 8px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 720px; }
+  h3 { font-size: 1.1rem; margin: 0 0 6px; }
+
+  .grid { display: grid; gap: 16px; }
+  .grid.c3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .grid.c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 680px) { .grid.c2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .card p { margin: 0; color: var(--muted); }
+  .card .tag {
+    display: inline-block; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 6px; margin-bottom: 10px;
+  }
+  .feature { display: flex; gap: 14px; align-items: flex-start; }
+  .feature .ic {
+    flex: none; width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center;
+  }
+
+  ul.check { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  ul.check li { padding-left: 28px; position: relative; }
+  ul.check li::before {
+    content: ""; position: absolute; left: 4px; top: .45em; width: 12px; height: 7px;
+    border-left: 2.5px solid var(--accent); border-bottom: 2.5px solid var(--accent); transform: rotate(-45deg);
+  }
+
+  /* Steps and code */
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+  ol.steps > li { counter-increment: s; position: relative; padding-left: 48px; min-width: 0; }
+  ol.steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: 0; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-text); font-weight: 700; display: grid; place-items: center;
+  }
+  ol.steps p { margin: 4px 0 10px; }
+  .code {
+    position: relative; background: var(--code-bg); color: var(--code-text); border-radius: 10px; border: 1px solid var(--border);
+  }
+  .code pre { margin: 0; padding: 14px 16px; padding-right: 76px; overflow-x: auto; font-size: .9rem; line-height: 1.55; }
+  .code .copy {
+    position: absolute; top: 8px; right: 8px; font: inherit; font-size: .78rem; font-weight: 600;
+    background: rgba(255,255,255,.08); color: var(--code-text); border: 1px solid rgba(255,255,255,.18);
+    border-radius: 6px; padding: 4px 9px; cursor: pointer;
+  }
+  .code .copy:hover { background: rgba(255,255,255,.16); }
+  .prompt { color: #7fd497; user-select: none; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tabs button {
+    font: inherit; font-size: .9rem; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .tabpanel[hidden] { display: none; }
+  .tabpanel p { margin: 0 0 10px; color: var(--muted); }
+
+  .note {
+    border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 22px;
+  }
+  .note p { margin: 0; }
+
+  details {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0 16px; margin-bottom: 10px;
+  }
+  details summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
+  details[open] summary { border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  details p { margin: 0 0 14px; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--muted); font-size: .9rem; }
+  footer p { margin: 0 0 8px; }
+
+  @media (max-width: 760px) {
+    nav.links { display: none; }
+    section { padding: 40px 0; }
+    .hero .wrap { padding-top: 56px; padding-bottom: 56px; }
+    .hero::before { inset: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M16 9l6 4.5-2.3 7h-7.4L10 13.5z" fill="currentColor"/></svg>
+      A2G-Linux
+    </a>
+    <nav class="links">
+      <a href="#versionen"><span lang="de">Versionen</span><span lang="en">Versions</span></a>
+      <a href="#funktionen"><span lang="de">Was es macht</span><span lang="en">What it does</span></a>
+      <a href="#installation">Installation</a>
+      <a href="#hilfe"><span lang="de">Hilfe</span><span lang="en">Help</span></a>
+    </nav>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Sprache / Language">
+        <button type="button" data-set-lang="de" aria-pressed="false">DE</button>
+        <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <button type="button" class="icon-btn" id="theme-btn" aria-label="Dark mode">
+        <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <h1><span lang="de">Anstoss 2 Gold unter Linux</span><span lang="en">Anstoss 2 Gold on Linux</span></h1>
+      <p class="lead">
+        <span lang="de">Der Fußballmanager von 1999 mit Lutris, Proton und Gamescope: Ein Skript installiert ihn von deiner CD oder dem GOG-Installer, und er sieht aus und verhält sich wie unter Windows.</span>
+        <span lang="en">The 1999 football manager with Lutris, Proton and Gamescope: one script installs it from your CD or the GOG installer, and it looks and behaves as it does on Windows.</span>
+      </p>
+      <div class="btns">
+        <a class="btn primary" href="#installation"><span lang="de">Loslegen</span><span lang="en">Get started</span></a>
+        <a class="btn ghost" href="https://github.com/transfairs/A2G-Linux">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+      <div class="badges">
+        <span>Lutris</span><span>GE-Proton</span><span>Gamescope</span><span>GPLv3</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="versionen">
+    <div class="wrap">
+      <h2><span lang="de">Unterstützte Versionen</span><span lang="en">Supported versions</span></h2>
+      <p class="sub">
+        <span lang="de">Jede Version bekommt einen eigenen Eintrag in Lutris, sie können also nebeneinander installiert sein.</span>
+        <span lang="en">Each version gets its own entry in Lutris, so they can be installed side by side.</span>
+      </p>
+      <div class="grid c3">
+        <div class="card">
+          <span class="tag">1999</span>
+          <h3><span lang="de">Original-CD</span><span lang="en">Original CD</span></h3>
+          <p>
+            <span lang="de">Die CD (oder ein ISO davon) wird kopiert und danach als Laufwerk D: genutzt. Das Original-Setup läuft ohne Dialoge durch.</span>
+            <span lang="en">The CD (or an ISO of it) is copied and used as drive D: from then on. The original setup runs without dialogs.</span>
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">2007</span>
+          <h3><span lang="de">DVD „ANSTOSS 2007“</span><span lang="en">DVD "ANSTOSS 2007"</span></h3>
+          <p>
+            <span lang="de">Die Kalypso-Neuauflage. Das Spiel wird von der DVD entpackt und aus seinem Kopierschutz-Mantel geholt, ohne etwas davon auszuführen. Die DVD wird nur bei der Installation gebraucht.</span>
+            <span lang="en">The Kalypso re-release. The game is unpacked from the DVD and taken out of its copy protection shell without running any of it. The DVD is only needed during the installation.</span>
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">GOG</span>
+          <h3>Anstoss 2 Gold (GOG)</h3>
+          <p>
+            <span lang="de">Der GOG-Installer wird mit innoextract entpackt. Kein CD-Laufwerk nötig, Banner und Cover kommen von GOG.</span>
+            <span lang="en">The GOG installer is unpacked with innoextract. No CD drive needed, banner and cover come from GOG.</span>
+          </p>
+        </div>
+      </div>
+      <div class="note">
+        <p>
+          <span lang="de">Das Repository enthält keine Dateien des Spiels, von Microsoft oder anderen Dritten. Du brauchst deine eigene CD, die DVD oder den GOG-Installer.</span>
+          <span lang="en">The repository contains no files from the game, from Microsoft or other third parties. You need your own CD, the DVD or the GOG installer.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="funktionen">
+    <div class="wrap">
+      <h2><span lang="de">Was es macht</span><span lang="en">What it does</span></h2>
+      <p class="sub">
+        <span lang="de">Unter Wine zeigt das Spiel ohne Anpassungen schwarze Videos, abgeschnittene Texte und gespiegelte Wappen oder startet gar nicht. Ein kleiner Starter behebt das im Speicher. Die Spieldateien bleiben unverändert.</span>
+        <span lang="en">Without adjustments, the game shows black videos, cut-off texts and mirrored crests under Wine, or doesn't start at all. A small launcher fixes this in memory. The game files stay unchanged.</span>
+      </p>
+      <div class="grid c2">
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+          <div>
+            <h3><span lang="de">16 Bit und 640×480</span><span lang="en">16 bit and 640×480</span></h3>
+            <p>
+              <span lang="de">Das Spiel läuft in einem 640×480-Wine-Desktop im Hicolor-Modus. Gamescope skaliert ihn scharf in ein frei veränderbares Fenster, auf Wunsch auch im Vollbild.</span>
+              <span lang="en">The game runs in a 640×480 Wine desktop in hicolor mode. Gamescope scales it sharply into a freely resizable window, or fullscreen if you like.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="2"/><path d="M17 10l5-3v10l-5-3z"/></svg></div>
+          <div>
+            <h3><span lang="de">Videos</span><span lang="en">Videos</span></h3>
+            <p>
+              <span lang="de">Intro, Outro, EM, WM und Finale werden aus Indeo 3 umgewandelt. Auch das „Tor des Monats“ und die Pokalauslosung mit den Vereinsnamen auf dem Schild funktionieren.</span>
+              <span lang="en">Intro, outro, European Championship, World Cup and final are converted from Indeo 3. "Goal of the month" and the cup draw with the club names on the sign work as well.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></div>
+          <div>
+            <h3><span lang="de">Schriften wie unter Windows</span><span lang="en">Fonts as on Windows</span></h3>
+            <p>
+              <span lang="de">Überschriften, Tabellen und Statistiken werden nicht mehr abgeschnitten. Vereinsnamen in großer Schrift bekommen eine eigens gebaute breite Schrift.</span>
+              <span lang="en">Headings, tables and statistics no longer get cut off. Club names in the large font get a specially built wide font.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></div>
+          <div>
+            <h3><span lang="de">Wappen, Flaggen, Maskottchen</span><span lang="en">Crests, flags, mascot</span></h3>
+            <p>
+              <span lang="de">Keine riesige Flagge mehr kopfüber oben links, und das Maskottchen in den Dialogen wird nicht mehr abgeschnitten.</span>
+              <span lang="en">No more huge upside-down flag in the top left, and the mascot in the dialogs no longer gets clipped.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg></div>
+          <div>
+            <h3><span lang="de">Fenster und Maus</span><span lang="en">Window and mouse</span></h3>
+            <p>
+              <span lang="de">Titelleisten wie unter Windows, eigener Name und Icon im Dock, und die Maus reagiert auch nach dem Verkleinern oder Vergrößern des Fensters weiter.</span>
+              <span lang="en">Title bars as on Windows, its own name and icon in the dock, and the mouse keeps working after resizing the window.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></div>
+          <div>
+            <h3><span lang="de">Ton und Torlimits</span><span lang="en">Sound and goal limits</span></h3>
+            <p>
+              <span lang="de">Der Ton kommt aus dem Standardgerät des Systems. Optional lässt sich die Torbegrenzung der Spiel-Engine aufheben. Beide Patches stammen aus A2G-Patcher und lassen sich zurücknehmen.</span>
+              <span lang="en">Sound comes from the system's default device. Optionally, the goal limit of the match engine can be lifted. Both patches come from A2G-Patcher and can be taken back.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg></div>
+          <div>
+            <h3><span lang="de">Editor und A2G-Trainer</span><span lang="en">Editor and A2G-Trainer</span></h3>
+            <p>
+              <span lang="de">Beide bekommen einen Eintrag im Anwendungsmenü und laufen mit demselben Proton wie das Spiel, auch während es läuft.</span>
+              <span lang="en">Both get an entry in the application menu and run with the same Proton as the game, even while it is running.</span>
+            </p>
+          </div>
+        </div>
+        <div class="card feature">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></div>
+          <div>
+            <h3><span lang="de">Datensatz und Spielstände</span><span lang="en">Data set and save games</span></h3>
+            <p>
+              <span lang="de">Bei der Installation kannst du einen Datensatz und deine Spielstände aus einer Zip-Datei oder einem Ordner übernehmen.</span>
+              <span lang="en">During the installation you can import a data set and your save games from a zip file or a folder.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="installation">
+    <div class="wrap">
+      <h2>Installation</h2>
+      <p class="sub">
+        <span lang="de">Getestet mit Lutris als Paket der Distribution (nicht Flatpak) und GE-Proton11-12.</span>
+        <span lang="en">Tested with Lutris as a regular distribution package (not the Flatpak) and GE-Proton11-12.</span>
+      </p>
+
+      <ol class="steps">
+        <li>
+          <h3><span lang="de">Voraussetzungen</span><span lang="en">Requirements</span></h3>
+          <ul class="check">
+            <li><span lang="de">Lutris aus der Paketverwaltung</span><span lang="en">Lutris from your package manager</span></li>
+            <li><span lang="de">GE-Proton11-12 in <code>~/.local/share/Steam/compatibilitytools.d/</code></span><span lang="en">GE-Proton11-12 in <code>~/.local/share/Steam/compatibilitytools.d/</code></span></li>
+            <li><code>ffmpeg</code>, <code>gamescope</code>, <code>imagemagick</code>, <code>python3</code>, <code>zenity</code>, <code>glib-compile-schemas</code>, <code>gcc</code></li>
+            <li><span lang="de">Für GOG und die DVD 2007: <code>innoextract</code></span><span lang="en">For GOG and the 2007 DVD: <code>innoextract</code></span></li>
+            <li><span lang="de">Optional: die Microsoft-Core-Fonts deiner Distribution, für Impact in den Überschriften</span><span lang="en">Optional: the Microsoft core fonts of your distribution, for Impact in headings</span></li>
+          </ul>
+        </li>
+        <li>
+          <h3><span lang="de">Repository holen</span><span lang="en">Get the repository</span></h3>
+          <div class="code"><pre><code><span class="prompt">$ </span>git clone https://github.com/transfairs/A2G-Linux.git ~/a2g-linux
+<span class="prompt">$ </span>cd ~/a2g-linux</code></pre><button type="button" class="copy">Copy</button></div>
+        </li>
+        <li>
+          <h3><span lang="de">Installer starten</span><span lang="en">Run the installer</span></h3>
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="true" aria-controls="tab-cd" id="t-cd"><span lang="de">Original-CD</span><span lang="en">Original CD</span></button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-2007" id="t-2007">DVD 2007</button>
+            <button type="button" role="tab" aria-selected="false" aria-controls="tab-gog" id="t-gog">GOG</button>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tab-cd" aria-labelledby="t-cd">
+            <p>
+              <span lang="de">CD einlegen oder ISO einhängen (Doppelklick im Dateimanager oder <code>udisksctl loop-setup -f anstoss2.iso</code>).</span>
+              <span lang="en">Insert the CD or mount the ISO (double-click in the file manager or <code>udisksctl loop-setup -f anstoss2.iso</code>).</span>
+            </p>
+            <div class="code"><pre><code><span class="prompt">$ </span>./install.sh --cd /run/media/$USER/&lt;CD-Label&gt;</code></pre><button type="button" class="copy">Copy</button></div>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tab-2007" aria-labelledby="t-2007" hidden>
+            <p>
+              <span lang="de">Die DVD wird an der Datei <code>ANSTOSS_2_GOLD/Setup.exe</code> erkannt.</span>
+              <span lang="en">The DVD is recognized by the file <code>ANSTOSS_2_GOLD/Setup.exe</code>.</span>
+            </p>
+            <div class="code"><pre><code><span class="prompt">$ </span>./install.sh --cd "/run/media/$USER/ANSTOSS 2007"</code></pre><button type="button" class="copy">Copy</button></div>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="tab-gog" aria-labelledby="t-gog" hidden>
+            <p>
+              <span lang="de">Mit dem deutschen GOG-Installer (1.0 fix2):</span>
+              <span lang="en">With the German GOG installer (1.0 fix2):</span>
+            </p>
+            <div class="code"><pre><code><span class="prompt">$ </span>./install.sh --gog ~/Downloads/setup_anstoss_2_gold_der_fuballmanager_1.0_fix2_\(german\)_\(48434\).exe</code></pre><button type="button" class="copy">Copy</button></div>
+          </div>
+        </li>
+        <li>
+          <h3><span lang="de">In Lutris bestätigen</span><span lang="en">Confirm in Lutris</span></h3>
+          <p>
+            <span lang="de">Lutris öffnet sich mit dem Installer. Danach fragt es optional nach Datensatz, Spielständen, Torlimits und A2G-Trainer. Außer dem Trainer und den GOG-Bildern wird nichts heruntergeladen.</span>
+            <span lang="en">Lutris opens with the installer. Afterwards it optionally asks for a data set, save games, goal limits and A2G-Trainer. Apart from the trainer and GOG's images, nothing is downloaded.</span>
+          </p>
+        </li>
+      </ol>
+
+      <div class="note">
+        <p>
+          <span lang="de"><strong>Fenster und Skalierung:</strong> Rechtsklick auf das Spiel, „Konfigurieren“, „Systemoptionen“. Dort lassen sich Fenster- oder Vollbildmodus, Startgröße und der Gamescope-Filter (scharf, weich, ganzzahlig) einstellen.</span>
+          <span lang="en"><strong>Window and scaling:</strong> right-click the game, "Configure", "System options". There you can set windowed or fullscreen mode, initial size and the Gamescope filter (sharp, smooth, integer).</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="hilfe">
+    <div class="wrap">
+      <h2><span lang="de">Häufige Probleme</span><span lang="en">Common problems</span></h2>
+      <p class="sub">
+        <span lang="de">Mehr dazu in der <a href="https://github.com/transfairs/A2G-Linux#troubleshooting">ausführlichen Anleitung</a>.</span>
+        <span lang="en">More in the <a href="https://github.com/transfairs/A2G-Linux#troubleshooting">full guide</a>.</span>
+      </p>
+      <details>
+        <summary><span lang="de">Nur schwarzer Bildschirm (GNOME 50 / Ubuntu 26.04)</span><span lang="en">Black screen only (GNOME 50 / Ubuntu 26.04)</span></summary>
+        <p>
+          <span lang="de">Gamescope stürzt beim Start ab. Die Umgebungsvariable <code>GSETTINGS_SCHEMA_DIR</code> muss auf den Ordner <code>gschemas</code> im Prefix zeigen. Neu erzeugen mit <code>./install.sh --make-schemas ~/Games/anstoss-2-gold/gschemas</code>.</span>
+          <span lang="en">Gamescope crashes at startup. The environment variable <code>GSETTINGS_SCHEMA_DIR</code> must point to the <code>gschemas</code> folder in the prefix. Recreate it with <code>./install.sh --make-schemas ~/Games/anstoss-2-gold/gschemas</code>.</span>
+        </p>
+      </details>
+      <details>
+        <summary><span lang="de">Mausklicks kommen nach dem Verändern der Fenstergröße nicht mehr an</span><span lang="en">Mouse clicks stop arriving after resizing the window</span></summary>
+        <p>
+          <span lang="de"><code>LD_PRELOAD</code> muss in den Umgebungsvariablen auf <code>gsfix.so</code> im Prefix-Ordner zeigen (voller Pfad).</span>
+          <span lang="en"><code>LD_PRELOAD</code> in the environment variables must point to <code>gsfix.so</code> in the prefix folder (full path).</span>
+        </p>
+      </details>
+      <details>
+        <summary>„Windows muß sich im Hicolormodus befinden“</summary>
+        <p>
+          <span lang="de">Das Spiel wurde nicht über <code>a2start.exe</code> im 640×480-Wine-Desktop gestartet. Ausführbare Datei und Argumente unter „Spieloptionen“ prüfen.</span>
+          <span lang="en">The game was not started through <code>a2start.exe</code> in the 640×480 Wine desktop. Check the executable and arguments under "Game options".</span>
+        </p>
+      </details>
+      <details>
+        <summary>„kein Intel Indeo 3.2-Videodekompressor“</summary>
+        <p>
+          <span lang="de">Auch hier lief das Spiel nicht über <code>a2start.exe</code>, oder es ist eine andere Programmversion. <code>a2start.log</code> im Spielordner zeigt, welche Anpassungen angewendet wurden.</span>
+          <span lang="en">Here too, the game did not run through <code>a2start.exe</code>, or it is a different program version. <code>a2start.log</code> in the game folder shows which changes were applied.</span>
+        </p>
+      </details>
+    </div>
+  </section>
+
+  <section id="projekte">
+    <div class="wrap">
+      <h2><span lang="de">Verwandte Projekte</span><span lang="en">Related projects</span></h2>
+      <div class="grid c2">
+        <a class="card" href="https://github.com/transfairs/A2G-Trainer" style="text-decoration:none">
+          <h3 style="color:var(--text)">A2G-Trainer</h3>
+          <p>
+            <span lang="de">Spielerwerte, Positionen und Fähigkeiten live im laufenden Spiel bearbeiten.</span>
+            <span lang="en">Edit player attributes, positions and skills live in the running game.</span>
+          </p>
+        </a>
+        <a class="card" href="https://github.com/transfairs/A2G-Patcher" style="text-decoration:none">
+          <h3 style="color:var(--text)">A2G-Patcher</h3>
+          <p>
+            <span lang="de">Patches für die Spieldatei unter Windows. Sound- und Torlimit-Patch von A2G-Linux stammen daher.</span>
+            <span lang="en">Patches for the game executable on Windows. A2G-Linux's sound and goal limit patches come from it.</span>
+          </p>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <span lang="de">A2G-Linux steht unter der GNU GPL v3. Ein Fanprojekt, nicht verbunden mit den Rechteinhabern von Anstoss 2.</span>
+      <span lang="en">A2G-Linux is licensed under the GNU GPL v3. A fan project, not affiliated with the rights holders of Anstoss 2.</span>
+    </p>
+    <p><a href="https://github.com/transfairs/A2G-Linux">github.com/transfairs/A2G-Linux</a></p>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var d = document.documentElement;
+    var meta = {
+      de: { title: "A2G-Linux: Anstoss 2 Gold unter Linux", copy: "Kopieren", copied: "Kopiert", dark: "Dunkles Design", light: "Helles Design",
+            desc: "Anstoss 2 Gold unter Linux mit Lutris, Proton und Gamescope, so wie unter Windows. Original-CD 1999, CD 2007 und GOG." },
+      en: { title: "A2G-Linux: Anstoss 2 Gold on Linux", copy: "Copy", copied: "Copied", dark: "Dark theme", light: "Light theme",
+            desc: "Anstoss 2 Gold on Linux with Lutris, Proton and Gamescope, as it is on Windows. Original 1999 CD, 2007 CD and GOG." }
+    };
+    function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+    // Language
+    function setLang(lang, save) {
+      d.setAttribute("data-lang", lang);
+      d.setAttribute("lang", lang);
+      document.title = meta[lang].title;
+      document.querySelector('meta[name="description"]').setAttribute("content", meta[lang].desc);
+      document.querySelectorAll("[data-set-lang]").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-set-lang") === lang ? "true" : "false");
+      });
+      document.querySelectorAll(".copy").forEach(function (b) { b.textContent = meta[lang].copy; });
+      updateThemeLabel();
+      if (save) store("a2g-lang", lang);
+    }
+    document.querySelectorAll("[data-set-lang]").forEach(function (b) {
+      b.addEventListener("click", function () { setLang(b.getAttribute("data-set-lang"), true); });
+    });
+
+    // Theme
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    function isDark() {
+      var t = d.getAttribute("data-theme");
+      return t ? t === "dark" : mq.matches;
+    }
+    function updateThemeLabel() {
+      var dark = isDark();
+      d.setAttribute("data-dark", dark ? "1" : "0");
+      var lang = d.getAttribute("data-lang");
+      document.getElementById("theme-btn").setAttribute("aria-label", dark ? meta[lang].light : meta[lang].dark);
+      document.getElementById("theme-btn").setAttribute("title", dark ? meta[lang].light : meta[lang].dark);
+    }
+    document.getElementById("theme-btn").addEventListener("click", function () {
+      var next = isDark() ? "light" : "dark";
+      d.setAttribute("data-theme", next);
+      store("a2g-theme", next);
+      updateThemeLabel();
+    });
+    if (mq.addEventListener) mq.addEventListener("change", updateThemeLabel);
+
+    // Tabs
+    var tabs = document.querySelectorAll('[role="tab"]');
+    tabs.forEach(function (t) {
+      t.addEventListener("click", function () {
+        tabs.forEach(function (o) {
+          var on = o === t;
+          o.setAttribute("aria-selected", on ? "true" : "false");
+          document.getElementById(o.getAttribute("aria-controls")).hidden = !on;
+        });
+      });
+    });
+
+    // Copy buttons
+    document.querySelectorAll(".copy").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var pre = b.parentNode.querySelector("pre").cloneNode(true);
+        pre.querySelectorAll(".prompt").forEach(function (p) { p.remove(); });
+        var text = pre.textContent.trim();
+        var done = function () {
+          var lang = d.getAttribute("data-lang");
+          b.textContent = meta[lang].copied;
+          setTimeout(function () { b.textContent = meta[d.getAttribute("data-lang")].copy; }, 1500);
+        };
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+      });
+    });
+
+    setLang(d.getAttribute("data-lang"), false);
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+bandit
+black
+coverage
+flake8
+isort
+pytest
+shellcheck-py
+tox

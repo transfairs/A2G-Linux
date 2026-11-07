@@ -1,0 +1,287 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Lutris installer for lutris.net: Anstoss 2 Gold from the original 1999 CD (or an ISO image of it).
+# Unlike anstoss2.yml.in it needs no install.sh run before: it downloads this repository itself.
+# For the website, everything below "script:" goes into the "Script" field (see README).
+#
+# The URL below always loads the newest release (asset A2G-Linux.tar.gz, published by .github/workflows/release.yml for each tag v*).
+name: Anstoss 2 Gold
+# The game page on lutris.net, the same as for the GOG script (there is no anstoss-2-gold)
+game_slug: anstoss-2
+slug: anstoss-2-gold-original-cd
+version: Original-CD
+runner: wine
+
+script:
+  # Lutris checks these before the installation starts. The steps with disable_runtime use the
+  # system's programs, so Lutris must be a distribution package, not the Flatpak.
+  require-binaries: python3, ffmpeg, ffprobe, gamescope, gcc, glib-compile-schemas, zenity, magick | convert
+
+  files:
+    # This repository (helper programs, patches, font builder), the newest release
+    - a2gsrc:
+        url: https://github.com/transfairs/A2G-Linux/releases/latest/download/A2G-Linux.tar.gz
+        filename: a2g-linux.tar.gz
+
+  game:
+    # 640x480 Wine virtual desktop (Proton ignores the registry setting for it), inside it
+    # a2start.exe: switches to 640x480x16 and patches the game in memory (see README)
+    exe: $GAMEDIR/drive_c/windows/explorer.exe
+    working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
+    args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" anstoss2.exe /f
+    prefix: $GAMEDIR
+
+  wine:
+    # No version: Lutris then uses its default "GE-Proton (Latest)" (newest GE-Proton via umu);
+    # install.sh pins GE-Proton11-12 instead. "version: ge-proton" fails in Lutris 0.5.22: installer
+    # scripts get "-x86_64" appended (only names starting with "GE-Proton" are exempt), and
+    # "ge-proton-x86_64" can be neither found nor downloaded.
+    dxvk: false
+    vkd3d: false
+    overrides:
+      ddraw: builtin
+      dsound: builtin
+
+  system:
+    env:
+      # GNOME 50: GTK3 inside Gamescope crashes (key "antialiasing" missing), hence a patched schema copy
+      GSETTINGS_SCHEMA_DIR: $GAMEDIR/gschemas
+      # gsfix.so (Gamescope only): keep clicks on the window frame away from the game, set the
+      # window title and disable Proton's Gamescope hack that strips title bars from dialogs;
+      # the app ID links the window to Lutris' menu entry (name and icon in the dock)
+      LD_PRELOAD: $GAMEDIR/gsfix.so
+      GSFIX_TITLE: Anstoss 2 Gold
+      GSFIX_APPID: net.lutris.anstoss-2-[0-9]*
+      GSFIX_WMNAME: gamescope
+    gamescope: true
+    gamescope_game_res: 640x480
+    gamescope_output_res: 1280x960
+    gamescope_window_mode: ""
+    gamescope_flags: "-S fit -F pixel"
+
+  installer:
+    # Shell variables in commands are lowercase: Lutris replaces $GAMEDIR, $CACHE, $DISC, $HOME,
+    # $a2gsrc etc. itself, also as the start of a longer name.
+    - extract:
+        file: a2gsrc
+        dst: $CACHE/a2g
+    # GitHub's archive has one top folder; Lutris usually unpacks its contents, this also covers the other case
+    - execute:
+        command: 'cd "$CACHE/a2g" && if [ ! -f install.sh ]; then d=$(dirname "$(find . -maxdepth 2 -name install.sh | head -1)") && cp -r "$d"/. . ; fi && test -f install.sh && test -f src/a2start.exe || { echo "The archive does not contain install.sh and src/a2start.exe"; exit 1; }'
+
+    - insert-disc:
+        requires: SETUP.EXE
+        message: 'Bitte die Anstoss-2-Gold-CD einlegen oder ihr ISO-Abbild einbinden (Doppelklick im Dateimanager oder "udisksctl loop-setup -f anstoss2.iso"), dann das Laufwerk suchen lassen oder den Ordner der CD auswählen.'
+
+    # Copy the CD into the game folder and convert its Indeo 3.2 videos (Wine has no decoder);
+    # the response file a2setup.iss installs to C:\Spiele\Anstoss 2 Gold without dialogs
+    - execute:
+        command: 'mkdir -p "$GAMEDIR/cd" && cp -r "$DISC"/. "$GAMEDIR/cd"/ && chmod -R u+w "$GAMEDIR/cd" && bash "$CACHE/a2g/install.sh" --convert-only "$GAMEDIR/cd" && iss=$(find "$GAMEDIR/cd" -maxdepth 1 -iname setup.iss | head -1) && test -n "$iss" && sed -e "s/\r$//" -e "s/^\(sz\(Path\|Dir\)=\).*/\1C:\\\\Spiele\\\\Anstoss 2 Gold/" -e "s/$/\r/" "$iss" > "$GAMEDIR/cd/a2setup.iss" && test "$(grep -c "Anstoss 2 Gold" "$GAMEDIR/cd/a2setup.iss")" = 2 && rm -f "$GAMEDIR/cd/a2setup.log" || { echo "Copying the CD failed"; exit 1; }'
+        disable_runtime: true  # ffmpeg/ffprobe do not start with Lutris' runtime libraries
+
+    # Banner and cover from the box art that AUTORUN.EXE on the CD shows, icon ANSTOSS2.ICO from the
+    # CD, as install.sh does: lutris.net has no banner and no icon for anstoss-2. Lutris names these
+    # files after the game slug and downloads only missing ones, so it keeps them.
+    - execute:
+        command: 'd="${XDG_DATA_HOME:-$HOME/.local/share}" && python3 "$CACHE/a2g/src/a2assets.py" media "$GAMEDIR/cd" "$d/lutris/banners/anstoss-2.jpg" "$d/lutris/coverart/anstoss-2.jpg" && ico=$(find "$GAMEDIR/cd" -maxdepth 1 -iname anstoss2.ico | head -1) && test -n "$ico" && mkdir -p "$d/icons/hicolor/128x128/apps" && im=$(command -v magick || command -v convert) && "$im" "$ico" -filter point -resize 128x128 "PNG32:$d/icons/hicolor/128x128/apps/lutris_anstoss-2.png" || { echo "Banner, cover or icon could not be created"; exit 1; }'
+        disable_runtime: true  # ImageMagick with the system's libraries
+
+    - task:
+        name: create_prefix
+        prefix: $GAMEDIR
+
+    # gschemas, gsfix.so and the wide font (from the MS Sans Serif of the Proton that umu fetched
+    # for the prefix) next to the game
+    - execute:
+        command: 'bash "$CACHE/a2g/install.sh" --make-schemas "$GAMEDIR/gschemas"'
+        disable_runtime: true  # glib-compile-schemas with the system's libraries
+    - execute:
+        command: 'gcc -O2 -Wall -shared -fPIC -o "$GAMEDIR/gsfix.so" "$CACHE/a2g/src/gsfix.c" -ldl'
+        disable_runtime: true
+    - execute:
+        command: 'fonts=$(ls -d "$HOME"/.local/share/Steam/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "$HOME"/.steam/root/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "${XDG_DATA_HOME:-$HOME/.local/share}"/lutris/runners/wine/GE-Proton*/files/share/wine/fonts 2>/dev/null | sort -V | tail -1) && test -f "$fonts/sserife.fon" && python3 "$CACHE/a2g/src/a2assets.py" fonts "$fonts" "$CACHE/a2g/build" || { echo "No sserife.fon of GE-Proton found"; exit 1; }'
+        disable_runtime: true
+
+    # Mount the converted CD copy as CD-ROM drive D:. If the CD or ISO was mounted while the prefix
+    # was created, Wine has taken D: for it (d: and the device link d::); without removing d::, Wine
+    # points D: back to the original CD with its Indeo videos on the next start (MCI error).
+    - execute:
+        command: 'rm -f "$GAMEDIR/dosdevices/d:" "$GAMEDIR/dosdevices/d::" && ln -s "$GAMEDIR/cd" "$GAMEDIR/dosdevices/d:"'
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_LOCAL_MACHINE\Software\Wine\Drives
+        key: "d:"
+        value: cdrom
+        type: REG_SZ
+
+    # 96 DPI, no font smoothing
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: LogPixels
+        value: "00000060"
+        type: REG_DWORD
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: FontSmoothing
+        value: "0"
+        type: REG_SZ
+
+    # Title bars in the colors of the XP theme Royale Noir (white on slate blue, inactive gray blue)
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: ActiveTitle
+        value: "41 56 74"
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: GradientActiveTitle
+        value: "58 70 86"
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: TitleText
+        value: "255 255 255"
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: InactiveTitle
+        value: "86 94 106"
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: GradientInactiveTitle
+        value: "106 114 126"
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: InactiveTitleText
+        value: "196 200 208"
+        type: REG_SZ
+    # Background of the virtual desktop in the active title bar color
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Colors
+        key: Background
+        value: "41 56 74"
+        type: REG_SZ
+
+    # Bold title bar font as in Royale Noir (LOGFONTW: Tahoma, height 10, weight 700)
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics
+        key: CaptionFont
+        value: "0a 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 bc 02 00 00 00 00 00 01 00 00 00 00 54 00 61 00 68 00 6f 00 6d 00 61 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+        type: REG_BINARY
+
+    # DirectDraw via GDI instead of OpenGL (video windows get painted over otherwise)
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Software\Wine\Direct3D
+        key: renderer
+        value: gdi
+        type: REG_SZ
+
+    # Without this, input stopped arriving after clicking another window
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Software\Wine\X11 Driver
+        key: UseTakeFocus
+        value: "N"
+        type: REG_SZ
+
+    # Original setup, silent, to C:\Spiele\Anstoss 2 Gold (result in a2setup.log). a2setup.exe closes
+    # the Start menu folder window the setup opens at the end; it would keep the installation waiting.
+    # Backslashes doubled for Lutris; Wine paths ignore case, so SETUP.EXE also finds setup.exe.
+    - task:
+        name: wineexec
+        prefix: $GAMEDIR
+        executable: $CACHE/a2g/src/a2setup.exe
+        args: 'D:\\SETUP.EXE -s -f1D:\\a2setup.iss -f2D:\\a2setup.log'
+
+    - execute:
+        command: 'grep -q "^ResultCode=0" "$GAMEDIR/cd/a2setup.log" && test -f "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/anstoss2.exe" || { echo "The setup failed, see $GAMEDIR/cd/a2setup.log"; exit 1; }'
+
+    - execute:
+        command: 'cp "$CACHE/a2g/src/a2start.exe" "$CACHE"/a2g/build/a2wide2?.fnt "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/"'
+
+    # Sound on the default audio device instead of the last one found (patch from A2G-Patch, see README)
+    - execute:
+        command: 'python3 "$CACHE/a2g/src/a2patch.py" --sound "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/anstoss2.exe"'
+        disable_runtime: true
+
+    # Indeo videos in the game folder, if the setup copied any
+    - execute:
+        command: 'bash "$CACHE/a2g/install.sh" --convert-only "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true  # ffmpeg/ffprobe do not start with Lutris' runtime libraries
+
+    # Optional: data set (overwrites the game's files) and save games (existing ones are kept)
+    - input_menu:
+        description: 'Einen Anstoss-2-Datensatz in den Spielordner importieren?'
+        id: DATASET
+        options:
+          - none: Nicht importieren
+          - zip: Aus einer Zip-Datei
+          - dir: Aus einem Ordner
+        preselect: none
+    - execute:
+        command: 'python3 "$CACHE/a2g/src/a2import.py" --overwrite --title "Anstoss-2-Datensatz" "$INPUT_DATASET" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true  # zenity does not start with Lutris' runtime libraries
+
+    - input_menu:
+        description: 'Spielstände in den Spielordner importieren?'
+        id: SAVES
+        options:
+          - none: Nicht importieren
+          - dir: Aus einem Ordner
+          - zip: Aus einer Zip-Datei
+        preselect: none
+    - execute:
+        command: 'python3 "$CACHE/a2g/src/a2import.py" --title "Anstoss-2-Spielstände" "$INPUT_SAVES" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true  # zenity does not start with Lutris' runtime libraries
+
+    # Optional: lift the goal limits (patch "Torgrenzen aufheben" from A2G-Patch, see README)
+    - input_menu:
+        description: 'Torgrenzen aufheben? Ohne Patch trifft eine Mannschaft vor der Halbzeit höchstens 6-mal und danach höchstens 10-mal, ab 7 Toren halbieren sich ihre Chancen. Der Patch hebt die Grenze auf 15 an.'
+        id: GOALS
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Torgrenzen aufheben
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_GOALS" != yes || python3 "$CACHE/a2g/src/a2patch.py" --goals "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/anstoss2.exe"'
+        disable_runtime: true
+
+    # Editor and, optionally, A2G-Trainer: entries in the application menu, started in this prefix
+    # (src/a2run.sh). Not a Lutris file, since those cannot be optional. Own slug anstoss-2-cd for their
+    # files, so they never replace the entries of an install.sh installation (anstoss-2-gold).
+    - input_menu:
+        description: 'A2G-Trainer installieren? Er bearbeitet das laufende Spiel (Spieler, Vereine, Finanzen) und bekommt einen eigenen Eintrag im Anwendungsmenü.'
+        id: TRAINER
+        options:
+          - none: Nicht installieren
+          - download: Neueste Version von GitHub herunterladen
+          - file: Aus einer lokalen Datei (zip oder exe)
+        preselect: none
+    - execute:
+        command: 'python3 "$CACHE/a2g/src/a2extras.py" --slug anstoss-2-cd "$GAMEDIR" "$INPUT_TRAINER"'
+        disable_runtime: true  # system tools (ImageMagick) with the system's libraries
