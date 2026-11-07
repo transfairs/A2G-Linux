@@ -2,6 +2,8 @@
 
 Runs the German football manager *Anstoss 2 Gold* on Linux with Lutris, Proton and Gamescope, looking and behaving as it does on Windows. Supported are the original 1999 CD release, the 2007 CD release on the DVD "ANSTOSS 2007" (see [2007 CD](#2007-cd-dvd-anstoss-2007)) and the GOG release (see [GOG version](#gog-version)).
 
+Website in German and English: [transfairs.github.io/A2G-Linux](https://transfairs.github.io/A2G-Linux/)
+
 This repository contains no files from the game, from Microsoft or other third parties. The Lutris images are cut out of the box art on your CD during the installation; for the fonts, see [Fonts](#fonts).
 
 ## Requirements
