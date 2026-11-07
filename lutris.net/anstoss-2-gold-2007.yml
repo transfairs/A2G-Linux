@@ -7,7 +7,7 @@
 # The URL below always loads the newest release (asset A2G-Linux.tar.gz, published by .github/workflows/release.yml for each tag v*).
 name: Anstoss 2 Gold (2007)
 # The game page on lutris.net, the same as for the CD and GOG scripts
-game_slug: anstoss-2
+game_slug: anstoss-2-gold-edition
 slug: anstoss-2-gold-cd-2007
 version: CD 2007
 runner: wine
@@ -15,7 +15,7 @@ runner: wine
 script:
   # Lutris checks these before the installation starts. The steps with disable_runtime use the
   # system's programs, so Lutris must be a distribution package, not the Flatpak.
-  require-binaries: python3, ffmpeg, ffprobe, gamescope, gcc, glib-compile-schemas, zenity, magick | convert, as, ld, objcopy, nm
+  require-binaries: python3, ffmpeg, ffprobe, gamescope, glib-compile-schemas, zenity, magick | convert
 
   files:
     # This repository (helper programs, patches, font builder), the newest release
@@ -51,7 +51,7 @@ script:
       # the app ID links the window to Lutris' menu entry (name and icon in the dock)
       LD_PRELOAD: $GAMEDIR/gsfix.so
       GSFIX_TITLE: Anstoss 2 Gold
-      GSFIX_APPID: net.lutris.anstoss-2-[0-9]*
+      GSFIX_APPID: net.lutris.anstoss-2-gold-edition-[0-9]*
       GSFIX_WMNAME: gamescope
     gamescope: true
     gamescope_game_res: 640x480
@@ -67,7 +67,7 @@ script:
         dst: $CACHE/a2g
     # GitHub's archive has one top folder; Lutris usually unpacks its contents, this also covers the other case
     - execute:
-        command: 'cd "$CACHE/a2g" && if [ ! -f install.sh ]; then d=$(dirname "$(find . -maxdepth 2 -name install.sh | head -1)") && cp -r "$d"/. . ; fi && test -f install.sh && test -f src/a2start.exe || { echo "The archive does not contain install.sh and src/a2start.exe"; exit 1; }'
+        command: 'cd "$CACHE/a2g" && if [ ! -f install.sh ]; then d=$(dirname "$(find . -maxdepth 2 -name install.sh | head -1)") && cp -r "$d"/. . ; fi && test -f install.sh && test -f src/a2start.exe && test -f src/gsfix.so || { echo "The archive does not contain install.sh, src/a2start.exe and src/gsfix.so"; exit 1; }'
 
     # Lutris matches the case of the path itself; the DVD is read in place, nothing is copied
     - insert-disc:
@@ -78,14 +78,13 @@ script:
         name: create_prefix
         prefix: $GAMEDIR
 
-    # gschemas, gsfix.so and the wide font (from the MS Sans Serif of the Proton that umu fetched
-    # for the prefix) next to the game
+    # gschemas, gsfix.so (built by the release workflow) and the wide font (from the MS Sans Serif
+    # of the Proton that umu fetched for the prefix) next to the game
     - execute:
         command: 'bash "$CACHE/a2g/install.sh" --make-schemas "$GAMEDIR/gschemas"'
         disable_runtime: true  # glib-compile-schemas with the system's libraries
     - execute:
-        command: 'gcc -O2 -Wall -shared -fPIC -o "$GAMEDIR/gsfix.so" "$CACHE/a2g/src/gsfix.c" -ldl'
-        disable_runtime: true
+        command: 'cp "$CACHE/a2g/src/gsfix.so" "$GAMEDIR/gsfix.so"'
     - execute:
         command: 'fonts=$(ls -d "$HOME"/.local/share/Steam/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "$HOME"/.steam/root/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "${XDG_DATA_HOME:-$HOME/.local/share}"/lutris/runners/wine/GE-Proton*/files/share/wine/fonts 2>/dev/null | sort -V | tail -1) && test -f "$fonts/sserife.fon" && python3 "$CACHE/a2g/src/a2assets.py" fonts "$fonts" "$CACHE/a2g/build" || { echo "No sserife.fon of GE-Proton found"; exit 1; }'
         disable_runtime: true
@@ -196,10 +195,11 @@ script:
         disable_runtime: true  # a system innoextract needs the system's libraries
 
     # Banner and cover from the box art that CD/AUTORUN.EXE shows, icon anstoss2.ico, as install.sh
-    # does: lutris.net has no banner and no icon for anstoss-2. Lutris names these files after the
-    # game slug and downloads only missing ones, so it keeps them.
+    # does: lutris.net has no icon for anstoss-2-gold-edition, and its banner and cover show other
+    # art. Lutris names these files after the game slug and downloads only missing ones, so it keeps
+    # them.
     - execute:
-        command: 'd="${XDG_DATA_HOME:-$HOME/.local/share}" && g="$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && python3 "$CACHE/a2g/src/a2assets.py" media "$g/CD" "$d/lutris/banners/anstoss-2.jpg" "$d/lutris/coverart/anstoss-2.jpg" && ico=$(find "$g" -maxdepth 1 -iname anstoss2.ico | head -1) && test -n "$ico" && mkdir -p "$d/icons/hicolor/128x128/apps" && im=$(command -v magick || command -v convert) && "$im" "$ico" -filter point -resize 128x128 "PNG32:$d/icons/hicolor/128x128/apps/lutris_anstoss-2.png" || { echo "Banner, cover or icon could not be created"; exit 1; }'
+        command: 'd="${XDG_DATA_HOME:-$HOME/.local/share}" && g="$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && python3 "$CACHE/a2g/src/a2assets.py" media "$g/CD" "$d/lutris/banners/anstoss-2-gold-edition.jpg" "$d/lutris/coverart/anstoss-2-gold-edition.jpg" && ico=$(find "$g" -maxdepth 1 -iname anstoss2.ico | head -1) && test -n "$ico" && mkdir -p "$d/icons/hicolor/128x128/apps" && im=$(command -v magick || command -v convert) && "$im" "$ico" -filter point -resize 128x128 "PNG32:$d/icons/hicolor/128x128/apps/lutris_anstoss-2-gold-edition.png" || { echo "Banner, cover or icon could not be created"; exit 1; }'
         disable_runtime: true  # ImageMagick with the system's libraries
 
     # The folder CD as CD-ROM drive D:, as Kalypso's compatibility.dll fakes it. If the DVD or ISO

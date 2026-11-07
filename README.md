@@ -8,12 +8,17 @@ This repository contains no files from the game, from Microsoft or other third p
 
 ## Requirements
 
+`install.sh` installs what is missing of the following with the package manager (`apt`, `dnf`, `pacman` or `zypper`; `sudo` asks for your password, the package manager for confirmation) and downloads GE-Proton11-12. With another package manager it lists what is missing and stops.
+
 - Lutris as a regular distribution package, not the Flatpak
 - GE-Proton11-12 (see below)
-- `ffmpeg`, `gamescope`, `imagemagick`, `python3`, `zenity`, `glib-compile-schemas` and `gcc` from your package manager, plus the Wayland headers for building `gsfix.so` (Debian/Ubuntu `libwayland-dev`, Fedora `wayland-devel`; on Arch they come with `wayland`)
+- `ffmpeg`, `gamescope`, `imagemagick`, `python3`, `zenity`, `glib-compile-schemas`
+- `gcc` and the Wayland headers for building `gsfix.so` (Debian/Ubuntu `libwayland-dev`, Fedora `wayland-devel`; on Arch they come with `wayland`), not needed with the release archive `A2G-Linux.tar.gz`, which contains `src/gsfix.so`
+- `curl`, only for downloading GE-Proton11-12
+- on Fedora: `ffmpeg` from RPM Fusion if Fedora's `ffmpeg-free` lacks the Indeo 3 decoder or the Microsoft Video 1 encoder (`install.sh` checks both)
 - optional: the Microsoft core fonts package of your distribution (e.g. `ttf-mscorefonts-installer`) for the original Impact in headings (see [Fonts](#fonts))
 - the original CD or the DVD "ANSTOSS 2007" (inserted) or an ISO image of it (mount it by double-clicking in the file manager or with `udisksctl loop-setup -f anstoss2.iso`), or the GOG installer `setup_anstoss_2_gold_der_fuballmanager_1.0_fix2_(german)_(48434).exe`
-- for the GOG installer and the 2007 DVD: `innoextract` (Lutris brings its own under `~/.local/share/lutris/runtime/`; otherwise from your package manager)
+- for the GOG installer and the 2007 DVD: `innoextract` (Lutris brings its own under `~/.local/share/lutris/runtime/`; otherwise `install.sh` installs it)
 
 ## Installation
 
@@ -29,7 +34,7 @@ This repository contains no files from the game, from Microsoft or other third p
 5. Lutris then asks four optional questions: whether to import a data set and save games (each from a zip file or a folder), whether to lift the goal limits and, last, whether to install A2G-Trainer.
 6. Unmount the CD after setup. From then on the game uses the copy as drive D:.
 
-Apart from the optional A2G-Trainer and, for the GOG version, GOG's images of the game, nothing is downloaded during the installation. For the trainer, the installer offers "No", "download the latest release from GitHub" or "from a local file" (the release zip `A2G-Trainer-Latest.zip` or `A2G-Trainer.exe`, e.g. for an installation without internet). If the download fails, the game is installed without the trainer. The game runs with GE-Proton11-12, which must be installed in `~/.local/share/Steam/compatibilitytools.d/` (folder `GE-Proton11-12` or `GE-Proton11-12-x86_64`). Lutris drops the `-x86_64` from GE-Proton names and would then try to download the version, so `install.sh` links the folder as `~/.local/share/lutris/runners/wine/GE-Proton11-12`. Without a fixed version, Lutris would let umu fetch every new GE-Proton release.
+Apart from missing packages, GE-Proton11-12 (if missing), the optional A2G-Trainer and, for the GOG version, GOG's images of the game, nothing is downloaded during the installation. For the trainer, the installer offers "No", "download the latest release from GitHub" or "from a local file" (the release zip `A2G-Trainer-Latest.zip` or `A2G-Trainer.exe`, e.g. for an installation without internet). If the download fails, the game is installed without the trainer. The game runs with GE-Proton11-12 in `~/.local/share/Steam/compatibilitytools.d/` (folder `GE-Proton11-12` or `GE-Proton11-12-x86_64`); if it is not there, `install.sh` downloads `GE-Proton11-12-x86_64.tar.gz` from GitHub, checks its SHA-512 and unpacks it there. Lutris drops the `-x86_64` from GE-Proton names and would then try to download the version, so `install.sh` links the folder as `~/.local/share/lutris/runners/wine/GE-Proton11-12`. Without a fixed version, Lutris would let umu fetch every new GE-Proton release.
 
 ## GOG version
 
@@ -39,7 +44,7 @@ Apart from the optional A2G-Trainer and, for the GOG version, GOG's images of th
 
 GOG sells the 2007 CD release by Kalypso, not the 1999 one: `run.exe` is the game of that release (built anew from the same source and taken out of its PECRYPT32 copy protection), and `RESDLL.dll`, `Editor.exe` and the data in `DATA.VER` differ from the 1999 CD as well. The 1999 `anstoss2.exe` is not in the GOG installer, so it cannot be made into the CD version. What the installer does instead:
 
-- **Own Lutris entry:** slug `anstoss-2-gold-edition` ("Anstoss 2 Gold (GOG)"). Lutris treats it as a game of its GOG service and installs it to `~/Games/gog/anstoss-2-gold-edition`, next to the CD version. The application menu entries are "Anstoss 2 Editor (GOG)" and "A2G-Trainer (GOG)" (`anstoss-2-gold-edition-editor.desktop`, `-trainer.desktop`); A2G-Trainer supports `run.exe`.
+- **Own Lutris entry:** slug `anstoss-2-gold-gog` ("Anstoss 2 Gold (GOG)"). Lutris treats it as a game of its GOG service and installs it to `~/Games/gog/anstoss-2-gold-gog`, next to the CD version. The application menu entries are "Anstoss 2 Editor (GOG)" and "A2G-Trainer (GOG)" (`anstoss-2-gold-gog-editor.desktop`, `-trainer.desktop`); A2G-Trainer supports `run.exe`.
 - **Only the game:** the GOG installer is not run but unpacked with innoextract to `C:\Spiele\Anstoss 2 Gold`. Left out are DirectX, GOG's DirectDraw wrapper `ddraw.dll`, the Windows compatibility database `game.sdb` and the `goggame-*` files. `rest.sav`, which GOG keeps under `__support/save`, goes to the game folder (without it a new game crashes and loading a save game returns to the main menu), `ExSpiel.sav` from `app/` to `DATA.DEF` and `DATA.VER`. The registry gets what the GOG installer writes (`HKLM\Software\Wow6432Node\ASCARON\ANSTOSS 2\1.00`: `InstalledTo`, `InstalledFrom`, `Language`). The game reads everything from its folder, no CD drive is needed.
 - **Same setup as the CD version:** fonts, registry settings, Gamescope window (scalable, 640×480 Wine desktop), the 5 Indeo videos converted in `VIDEOS`, `a2start.exe` and the patches in `run.exe` (`--sound`, optionally `--goals`; backup `run.exe.vor-a2g-patch`).
 - **CD checks of the 2007 release (`--disc-check`, always):** the 2007 CD release checks its CD in 11 places of the game; without the CD it sabotages the game (from the second season all teams are called "Raubkopie", players drop to strength 1). Each check calls one signature routine and subtracts the expected value, zero or more means "original CD". GOG's "1.0 fix2" replaced these subtractions with NOPs, which leaves the raw signature and makes every check fail. `src/a2patch.py --disc-check` puts `xor reg,reg` there, the result of a passed check. The 1999 CD version has none of these checks. Applied only if exactly these 11 places are found.
@@ -56,7 +61,7 @@ GOG sells the 2007 CD release by Kalypso, not the 1999 one: `run.exe` is the gam
   - traits of new goalkeepers as in 1.01 (`0x5a2fc0`)
   - when the human managers are reordered, a data block of 0x160 bytes per manager is reordered with them (`0x5bd540`)
   - the cup draw loads `archives/movelist.dat` from the game folder instead of the CD (`0x468a4e`, as in [A2G-Patch](https://github.com/transfairs/A2G-Patcher)); the file comes with 1.01 (see the next item) and is not on any CD. For GOG both paths point to the game folder, for the 2007 CD the CD path is drive D:.
-  The new functions were checked in an x86 emulator against the 1.01 originals with thousands of random inputs (same results); they need GNU binutils (`as`, `ld`, `objcopy`, `nm`, installed with `gcc`).
+  The new functions were checked in an x86 emulator against the 1.01 originals with thousands of random inputs (same results). `src/a2v101build.py` assembles the source with GNU binutils into `src/a2v101.json`, which is part of the repository: the code, the places that depend on its address and its entry points. `src/a2patch.py` moves this code to the address of the new section, so installing needs no binutils. After a change of `src/a2v101.S`, run `src/a2v101build.py` again; a test fails while the file is out of date.
 - **Patch 1.01, data:** 1.01 changes three data files; `src/a2data101.py` makes all of them from the GOG files and own code, without files of the patch. In the event texts (`TEXTE/EreigGold.saq`, the name `run.exe` reads, also written as `EreigGld.saq`, the 1.01 name) two texts end with "." instead of ":" (the file is decrypted, changed and encrypted again; identical to 1.01). In `LAENDER.SAV` (`DATA.DEF` and `DATA.VER`) one value changes from 3 to 4 (identical to 1.01). `ARCHIVES/MoveList.dat` is the animation of a sign flying into a video window (probably the cup draw): per frame a table that maps the screen pixels to a 128x32 picture the game draws at run time. `src/a2movelist.py` holds only the path of the sign (position, size and the four corners per frame) and computes the tables as perspective projections; inside the sign they differ from the file of 1.01 by at most one pixel. All results are checked against their SHA-256; originals are kept as `*.vor-1.01`.
 - **Dialogs (`src/a2resdll.py`, always):** all dialogs of the game are templates in `RESDLL.dll`. In GOG's file they lack styles the 1999 file has: the title bar (`WS_CAPTION`, 342 dialogs; the game centers dialogs with a title bar over its window itself, GOG's file uses `DS_CENTER` instead), `DS_MODALFRAME`, the sunken frame (`WS_EX_CLIENTEDGE`) around 68 controls, e.g. the choices that look like buttons ("Frei (Vorsaison voreingestellt)"), `WS_EX_TRANSPARENT` on 16 radio buttons and the character set of the dialog font. The script sets the values of 1999 in place (own table from comparing both files, the file keeps its size), checked against SHA-256 before and after; the original is kept as `RESDLL.dll.vor-dialoge`. Not changed are texts and pictures the 2007 release changed on purpose (version "1.0" in the info dialog, "Championsleague", "Managerkarriere", four pictures).
 - **Memory patches:** `run.exe` contains the same code as the 1999 `anstoss2.exe` at other addresses. `a2start.exe` knows both (table `versions` in `src/a2start.c`; GOG's and the 2007 CD's `run.exe` only differ in the addresses of their import slots) and writes the detected version to `a2start.log`.
@@ -143,20 +148,20 @@ Right-click the game → Configure → System options (enable "Advanced" at the 
 
 ## Installer scripts for lutris.net
 
-`lutris.net/anstoss-2-gold.yml` (CD), `lutris.net/anstoss-2-gold-2007.yml` (2007 CD on the DVD "ANSTOSS 2007") and `lutris.net/anstoss-2-gold-gog.yml` (GOG) are drafts of installer scripts for the Lutris website. They do what `install.sh` and `anstoss2.yml.in` do, without anything run beforehand: they download a release of this repository, copy the CD (`insert-disc`), unpack `ANSTOSS_2_GOLD/Setup.exe` from the DVD (`insert-disc`, read in place) or unpack the GOG installer, and convert the videos and build the wide font and `gsfix.so` during the installation. Differences from `install.sh`:
+`lutris.net/anstoss-2-gold.yml` (CD), `lutris.net/anstoss-2-gold-2007.yml` (2007 CD on the DVD "ANSTOSS 2007") and `lutris.net/anstoss-2-gold-gog.yml` (GOG) are drafts of installer scripts for the Lutris website. They do what `install.sh` and `anstoss2.yml.in` do, without anything run beforehand: they download a release of this repository, copy the CD (`insert-disc`), unpack `ANSTOSS_2_GOLD/Setup.exe` from the DVD (`insert-disc`, read in place) or unpack the GOG installer, and convert the videos and build the wide font during the installation. `gsfix.so` comes prebuilt in the release archive, so the scripts need neither `gcc` nor GNU binutils. Differences from `install.sh`:
 
 - **Proton:** no Wine version in the script, so Lutris uses its default "GE-Proton (Latest)" (umu) instead of the fixed GE-Proton11-12, since a script cannot rely on the link `install.sh` makes. Writing `version: ge-proton` does not work: Lutris 0.5.22 turns it into `ge-proton-x86_64` and aborts with "Failed to retrieve wine (ge-proton-x86_64) information". `a2run.sh` then uses the same.
 - **CD copy:** in the game folder (`$GAMEDIR/cd`) instead of `~/Games/anstoss2-cd`.
 - **Menu entries of editor and trainer:** own names (`anstoss-2-cd-*.desktop`, `anstoss-2-2007-*`, `anstoss-2-gog-*`), so an installation from lutris.net never replaces or removes the entries of an `install.sh` installation.
-- **Banner, cover and icon:** made during the installation like `install.sh` does (CD and 2007 CD: from the box art of `AUTORUN.EXE` and `anstoss2.ico`; GOG: from GOG's images and `Anstoss2.ico`), named after the game slug `anstoss-2`, since lutris.net has only a cover for that page.
+- **Banner, cover and icon:** made during the installation like `install.sh` does (CD and 2007 CD: from the box art of `AUTORUN.EXE` and `anstoss2.ico`; GOG: from GOG's images and `Anstoss2.ico`), named after the game slug `anstoss-2-gold-edition`, since lutris.net has no icon for that page and its banner and cover show other art.
 - **Lutris as a Flatpak** is not supported: several steps use programs of the system (`disable_runtime`). `require-binaries` stops the installation early if one is missing.
 
 Before submitting:
 
 1. Push a release tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`). The workflow `.github/workflows/release.yml` then publishes a release with the repository attached as `A2G-Linux.tar.gz`, and the three files download it from `https://github.com/transfairs/A2G-Linux/releases/latest/download/A2G-Linux.tar.gz`, i.e. always from the newest release.
 2. Test each with `lutris -i lutris.net/<file>.yml`.
-3. Submit all three scripts on the game page `anstoss-2` (there is no `anstoss-2-gold`). For GOG this matters: lutris.net links the GOG product 1808817480 to that page, and only then does Lutris offer the script for the game in its GOG library and download the GOG installer itself (with `gogid` in the script; Lutris must run in German, since GOG only has a German installer).
-4. On the game page, choose "Add installer", runner Wine, version "Original-CD", "CD 2007" or "GOG 1.0 fix2", and paste everything below `script:` (one indentation level less) into the script field. Under notes: needs Lutris as a distribution package, the listed programs (including GNU binutils for GOG and the 2007 CD); link to this README.
+3. Submit all three scripts on the game page [`anstoss-2-gold-edition`](https://lutris.net/games/anstoss-2-gold-edition/), not on `anstoss-2` (Anstoss 2 from 1997). For GOG, lutris.net links the GOG product 1808817480 to `anstoss-2` (as of November 2026); request on lutris.net that this link be moved to `anstoss-2-gold-edition`. Only then does Lutris offer the script for the game in its GOG library and download the GOG installer itself (with `gogid` in the script; Lutris must run in German, since GOG only has a German installer). Until then, GOG users select the installer file themselves.
+4. On the game page, choose "Add installer", runner Wine, version "Original-CD", "CD 2007" or "GOG 1.0 fix2", and paste everything below `script:` (one indentation level less) into the script field. `lutris.net/content.sh [<file>.yml]` writes exactly that to `lutris.net/content.yml` (without an argument from the CD script). Under notes: needs Lutris as a distribution package, the listed programs; link to this README.
 
 ## Building the helper programs
 
@@ -167,7 +172,7 @@ x86_64-w64-mingw32-gcc -O2 -Wall -mwindows -o src/a2start.exe src/a2start.c -lgd
 x86_64-w64-mingw32-gcc -O2 -Wall -o src/a2setup.exe src/a2setup.c
 ```
 
-`a2start.exe` is a Windows program without a console (`-mwindows`), `a2setup.exe` a console program. `install.sh` builds `src/gsfix.so` itself with the system `gcc` if it is missing.
+`a2start.exe` is a Windows program without a console (`-mwindows`), `a2setup.exe` a console program. `install.sh` builds `src/gsfix.so` itself with the system `gcc` if it is missing. The release workflow builds it with `.github/build-gsfix.sh` in an Ubuntu 22.04 container (glibc 2.35 and libwayland 1.20; the result needs glibc 2.34 or newer, i.e. distributions from late 2021 on) and puts it into `A2G-Linux.tar.gz`, from which the lutris.net scripts take it; the tests workflow runs the same build on every push. `src/gsfix.c` therefore brings its own copy of `wl_pointer_listener`, whose last two members are missing from older headers.
 
 ## Development and tests
 
@@ -183,12 +188,12 @@ python3 -m venv .venv
 | Environment | What it does |
 |---|---|
 | `py312`, `py313`, `py314` | pytest (`tests/`); Python versions that are not installed are skipped |
-| `lint` | isort, black, flake8 for `src/` and `tests/`, shellcheck for `install.sh` and `src/a2run.sh` |
+| `lint` | isort, black, flake8 for `src/` and `tests/`, shellcheck for `install.sh`, `src/a2run.sh`, `lutris.net/content.sh` and `.github/build-gsfix.sh` |
 | `bandit` | security checks of `src/` (settings in `pyproject.toml`) |
 | `coverage` | the tests with branch coverage, HTML report in `logs/coverage/` |
 | `build` | builds `a2start.exe`, `a2setup.exe` and `gsfix.so` with warnings as errors into a scratch folder (needs MinGW-w64 and `gcc`) |
 
-The tests use synthetic data only, no files of the game. The test of the 1.01 changes assembles `src/a2v101.S` and is skipped without GNU binutils. GitHub Actions runs `tox` on every push (`.github/workflows/tests.yml`).
+The tests use synthetic data only, no files of the game. The tests that compare `src/a2v101.json` with a fresh build of `src/a2v101.S` are skipped without GNU binutils. GitHub Actions runs `tox` on every push (`.github/workflows/tests.yml`).
 
 Python code is formatted with black and isort (120 characters, `pyproject.toml`). Hand-aligned tables (addresses, dialog IDs, hashes) stay as written between `# fmt: off` and `# fmt: on`. Commits that only reformat are listed in `.git-blame-ignore-revs`; to have `git blame` skip them locally as GitHub does:
 

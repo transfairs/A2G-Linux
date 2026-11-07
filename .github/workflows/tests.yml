@@ -38,3 +38,7 @@ jobs:
 
       - name: Run tox
         run: tox
+
+      # As in the release workflow, with the older headers and glibc of Ubuntu 22.04
+      - name: Build gsfix.so for the release
+        run: .github/build-gsfix.sh "$RUNNER_TEMP/gsfix.so"

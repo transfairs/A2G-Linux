@@ -1,6 +1,5 @@
 """a2patch.py on synthetic images: no game files needed."""
 
-import shutil
 import struct
 import sys
 import zlib
@@ -229,12 +228,6 @@ def test_v101_state():
     assert p.v101_state(bytes(pe_image(hooks=False))) is None
 
 
-needs_binutils = pytest.mark.skipif(
-    not all(shutil.which(t) for t in ("as", "ld", "objcopy", "nm")), reason="GNU binutils missing"
-)
-
-
-@needs_binutils
 def test_apply_v101():
     image = pe_image()
     size_before = struct.unpack_from("<I", image, 0x98 + 56)[0]
@@ -258,7 +251,6 @@ def test_apply_v101():
             assert out[at : at + length] == bytes.fromhex(new)
 
 
-@needs_binutils
 def test_apply_v101_drops_the_signature():
     image = pe_image()
     sec_dir = 0x98 + 96 + 32
@@ -354,7 +346,6 @@ def gog_image():
     return image
 
 
-@needs_binutils
 def test_main_gog(tmp_path, monkeypatch, capsys):
     exe = tmp_path / "run.exe"
     exe.write_bytes(gog_image())

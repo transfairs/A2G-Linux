@@ -85,8 +85,25 @@ __attribute__((constructor)) static void init(void) {
 #define NCB 10
 typedef void (*cb_t)(void);
 
+/* wl_pointer_listener as of wl_pointer version 9 (libwayland 1.22). Own copy, since older headers
+ * (e.g. 1.20 of Ubuntu 22.04, where the release build runs) lack the last two members; the order
+ * of the members is that of the protocol's events and does not change. */
+struct pointer_listener {
+    void (*enter)(void *, struct wl_pointer *, uint32_t, struct wl_surface *, wl_fixed_t, wl_fixed_t);
+    void (*leave)(void *, struct wl_pointer *, uint32_t, struct wl_surface *);
+    void (*motion)(void *, struct wl_pointer *, uint32_t, wl_fixed_t, wl_fixed_t);
+    void (*button)(void *, struct wl_pointer *, uint32_t, uint32_t, uint32_t, uint32_t);
+    void (*axis)(void *, struct wl_pointer *, uint32_t, uint32_t, wl_fixed_t);
+    void (*frame)(void *, struct wl_pointer *);
+    void (*axis_source)(void *, struct wl_pointer *, uint32_t);
+    void (*axis_stop)(void *, struct wl_pointer *, uint32_t, uint32_t);
+    void (*axis_discrete)(void *, struct wl_pointer *, uint32_t, int32_t);
+    void (*axis_value120)(void *, struct wl_pointer *, uint32_t, int32_t);
+    void (*axis_relative_direction)(void *, struct wl_pointer *, uint32_t, uint32_t);
+};
+
 struct ctx {
-    const struct wl_pointer_listener *orig;
+    const struct pointer_listener *orig;
     void *data;
     int on_game;     /* pointer is over the game surface */
 };
@@ -144,7 +161,7 @@ static void p_axis_rel_dir(void *d, struct wl_pointer *p, uint32_t a, uint32_t d
     (void)d; (void)p; (void)a; (void)dir;
 }
 
-static const struct wl_pointer_listener wrap = {
+static const struct pointer_listener wrap = {
     .enter = p_enter, .leave = p_leave, .motion = p_motion, .button = p_button,
     .axis = p_axis, .frame = p_frame, .axis_source = p_axis_source,
     .axis_stop = p_axis_stop, .axis_discrete = p_axis_discrete,
@@ -167,7 +184,7 @@ int wl_proxy_add_listener(struct wl_proxy *proxy, void (**impl)(void), void *dat
     if (active && strcmp(wl_proxy_get_class(proxy), "wl_pointer") == 0 && from_gamescope(impl)) {
         struct ctx *c = calloc(1, sizeof *c);
         if (c) {
-            c->orig = (const struct wl_pointer_listener *)impl;
+            c->orig = (const struct pointer_listener *)impl;
             c->data = data;
             return real(proxy, (void (**)(void))&wrap, c);
         }

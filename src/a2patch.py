@@ -34,10 +34,11 @@
              call check / add esp,4 / {nop x5 | sub eax,imm32} / mov [..],eax ->  ... / xor eax,eax / nop x3 / ...
 
 --v101   run.exe (GOG, 2007 CD) only: the program changes of patch 1.01 (run.exe is built from the
-         1.00 source). The code is in src/a2v101.S; it is assembled with GNU as/ld for a new
-         section ".a2v101" appended to run.exe, and 12 places jump there (see V101_HOOKS). A 13th
-         place makes the cup draw load archives/movelist.dat from the game folder instead of the
-         CD, as 1.01 does (the file comes with patch 1.01, see src/a2data101.py). GOG's signature
+         1.00 source). The code is in src/a2v101.S, assembled by src/a2v101build.py into
+         src/a2v101.json (no GNU binutils needed here); it is moved to the address of a new section
+         ".a2v101" appended to run.exe, and 12 places jump there (see V101_HOOKS). A 13th place
+         makes the cup draw load archives/movelist.dat from the game folder instead of the CD, as
+         1.01 does (the file comes with patch 1.01, see src/a2data101.py). GOG's signature
          at the end of the file, invalid after any patch, is replaced by the section.
 
 Integrity of run.exe (GOG, 2007 CD, automatic): the 2007 release checks its own program in two ways.
@@ -57,13 +58,16 @@ otherwise nothing is written.
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
-import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from a2v101build import relocate  # noqa: E402
 
 BACKUP_SUFFIX = ".vor-a2g-patch"
 NOP = 0x90
@@ -192,7 +196,7 @@ def disc_check_sites(image):
 
 # --- Patch 1.01 for run.exe (GOG, 2007 CD) ---------------------------------------------
 V101_SECTION = b".a2v101\0"
-V101_SOURCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "a2v101.S")
+V101_PREBUILT = os.path.join(HERE, "a2v101.json")  # src/a2v101.S assembled by src/a2v101build.py
 JMP_REL32 = 0xE9
 # (address in run.exe, original bytes, symbol in a2v101.S or None for an in-place change, new bytes)
 # fmt: off
@@ -231,22 +235,10 @@ def va_offset(sections, va):
     return None
 
 
-def assemble(source, address):
-    """(code, {symbol: address}) of the source linked at address, with GNU as/ld."""
-    for tool in ("as", "ld", "objcopy", "nm"):
-        if not shutil.which(tool):
-            sys.exit(f"{tool} (GNU binutils) is missing, please install it with your package manager")
-    with tempfile.TemporaryDirectory() as tmp:
-        obj, elf, raw = (os.path.join(tmp, n) for n in ("a.o", "a.elf", "a.bin"))
-        subprocess.run(["as", "--32", "-o", obj, source], check=True)
-        subprocess.run(["ld", "-m", "elf_i386", "-Ttext", hex(address), "-e", "_start", "-o", elf, obj], check=True)
-        subprocess.run(["objcopy", "-O", "binary", "-j", ".text", elf, raw], check=True)
-        out = subprocess.run(["nm", elf], check=True, capture_output=True, text=True).stdout
-        symbols = {
-            name: int(value, 16) for value, kind, name in (line.split() for line in out.splitlines()) if kind in "Tt"
-        }
-        with open(raw, "rb") as f:
-            return f.read(), symbols
+def load_v101(address):
+    """(code, {symbol: address}) of the prebuilt src/a2v101.json, moved to address."""
+    with open(V101_PREBUILT) as f:
+        return relocate(json.load(f), address)
 
 
 def v101_state(image):
@@ -269,7 +261,7 @@ def apply_v101(image):
         sys.exit("no room for another section header")
     size_of_image = struct.unpack_from("<I", image, opt + 56)[0]
     va = 0x400000 + size_of_image
-    code, symbols = assemble(V101_SOURCE, va)
+    code, symbols = load_v101(va)
     raw = max(r + s for _, _, _, s, r in sections)  # end of the section data
     sec_dir = opt + 96 + 4 * 8  # certificate table (GOG's signature)
     cert_at, cert_size = struct.unpack_from("<II", image, sec_dir)

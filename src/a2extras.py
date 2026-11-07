@@ -5,7 +5,7 @@
     a2extras.py [--slug SLUG] <prefix folder> none|download|file [zip or exe]
 
 - copies a2run.sh into the prefix folder (with the slug for the menu entries, default
-  anstoss-2-gold; install.sh uses the Lutris slug: anstoss-2-gold-edition for GOG,
+  anstoss-2-gold; install.sh uses the Lutris slug: anstoss-2-gold-gog for GOG,
   anstoss-2-gold-2007 for the 2007 CD; the lutris.net scripts use anstoss-2-cd, anstoss-2-2007
   and anstoss-2-gog, so every installation gets its own menu entries)
 - trainer "download": fetches the latest release zip from GitHub; "file": a zip or exe given as
@@ -37,7 +37,7 @@ RT_ICON, RT_GROUP_ICON = 3, 14
 SUFFIXES = {
     "anstoss-2-gold": "",
     "anstoss-2-gold-2007": " (2007)",
-    "anstoss-2-gold-edition": " (GOG)",
+    "anstoss-2-gold-gog": " (GOG)",
     "anstoss-2-cd": "",
     "anstoss-2-2007": " (2007)",
     "anstoss-2-gog": " (GOG)",

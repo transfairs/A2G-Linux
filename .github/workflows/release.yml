@@ -3,7 +3,9 @@ name: Release
 # Pushing a tag v* publishes a release with the repository attached as A2G-Linux.tar.gz. The
 # lutris.net installer scripts download it from releases/latest/download/A2G-Linux.tar.gz, which
 # always points to the asset of the newest release (GitHub's own source archives have no such
-# "latest" URL).
+# "latest" URL). The archive also holds src/gsfix.so, built here, so the lutris.net scripts need
+# neither gcc nor the Wayland headers. Built in an Ubuntu 22.04 container, so it runs with any
+# glibc from 2.34 on (dlsym), not only with the newest one of the runner.
 on:
   push:
     tags:
@@ -20,8 +22,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Build gsfix.so
+        run: .github/build-gsfix.sh
+
       - name: Build archive
-        run: git archive --format=tar.gz --prefix=A2G-Linux/ -o A2G-Linux.tar.gz "$GITHUB_REF_NAME"
+        run: |
+          mkdir out
+          git archive --format=tar --prefix=A2G-Linux/ "$GITHUB_REF_NAME" | tar -x -C out
+          cp src/gsfix.so out/A2G-Linux/src/
+          tar -czf A2G-Linux.tar.gz -C out A2G-Linux
 
       # A release made by hand for this tag only gets the archive (replacing an older one)
       - name: Publish release

@@ -15,7 +15,7 @@
 #    GOG: unpacks the installer with innoextract to C:\Spiele\Anstoss 2 Gold and converts the videos
 #         there and applies patch 1.01 (program: src/a2v101.S; data: src/a2data101.py, src/a2movelist.py) and the
 #         dialog styles of 1999 (src/a2resdll.py). The GOG version
-#         gets its own Lutris entry (slug anstoss-2-gold-edition, folder ~/Games/gog/anstoss-2-gold-edition),
+#         gets its own Lutris entry (slug anstoss-2-gold-gog, folder ~/Games/gog/anstoss-2-gold-gog),
 #         so both can be installed side by side.
 #    2007 CD: unpacks ANSTOSS_2_GOLD/Setup.exe with innoextract to C:\Spiele\Anstoss 2 Gold, takes run.exe
 #         out of its copy protection shell (src/a2unpack.py), mounts the folder CD there as drive D:,
@@ -25,9 +25,10 @@
 #    the CD) and the game's icon into Lutris (src/a2assets.py). For GOG, banner and cover come from GOG's images of the game.
 #    Lutris then optionally imports a data set and save games and lifts the goal limits.
 #
-# Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity, gcc.
-# GOG and 2007 CD: innoextract (Lutris brings its own in ~/.local/share/lutris/runtime, otherwise from
-# the package manager) and GNU binutils (as, ld, objcopy, nm; come with gcc).
+# Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity.
+# Without src/gsfix.so (in the release archive, not in the git repository): gcc and the Wayland headers.
+# GOG and 2007 CD: innoextract (Lutris brings its own in ~/.local/share/lutris/runtime). Missing ones
+# are installed with apt, dnf, pacman or zypper (with sudo); a missing GE-Proton11-12 is downloaded.
 set -euo pipefail
 
 PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,34 +92,109 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for t in lutris ffmpeg ffprobe gamescope glib-compile-schemas python3 zenity; do
-  command -v "$t" >/dev/null || die "$t is missing, please install it with your package manager"
-done
-command -v magick >/dev/null || command -v convert >/dev/null || die "imagemagick is missing, please install it with your package manager"
 [[ -n "$CD" || -n "$GOG" ]] || die "--cd (e.g. /run/media/$USER/ANSTOSS2) or --gog <setup.exe> is missing"
 [[ -z "$CD" || -z "$GOG" ]] || die "--cd and --gog cannot be combined"
+[[ -z "$CD" || -d "$CD" ]] || die "$CD not found"
 for f in a2start.exe a2setup.exe; do
   [[ -f "$PKG/src/$f" ]] || die "src/$f is missing next to install.sh"
 done
+LUTRIS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+# The "ANSTOSS 2007" DVD: Anstoss 2 Gold of 2007 is an Inno Setup installer in ANSTOSS_2_GOLD
+[[ -z "$CD" ]] || DVD="$(find "$(cd "$CD" && pwd)" -maxdepth 2 -ipath '*/anstoss_2_gold/setup.exe' 2>/dev/null | head -1)"
+
+# --- Dependencies ---------------------------------------------------------------
+# Missing programs are installed with the package manager (sudo asks for the password, the package
+# manager for confirmation). Package per need: apt (Debian, Ubuntu), dnf (Fedora), pacman (Arch),
+# zypper (openSUSE); dnf and zypper also take file paths, for packages named differently by version.
+DEPS='
+need                  apt             dnf                 pacman       zypper
+lutris                lutris          lutris              lutris       lutris
+ffmpeg                ffmpeg          /usr/bin/ffmpeg     ffmpeg       /usr/bin/ffmpeg
+gamescope             gamescope       gamescope           gamescope    gamescope
+imagemagick           imagemagick     ImageMagick         imagemagick  ImageMagick
+python3               python3         python3             python       python3
+zenity                zenity          zenity              zenity       zenity
+glib-compile-schemas  libglib2.0-bin  glib2               glib2        glib2-tools
+gcc                   gcc             gcc                 gcc          gcc
+wayland               libwayland-dev  wayland-devel       wayland      wayland-devel
+innoextract           innoextract     innoextract         innoextract  innoextract
+curl                  curl            curl                curl         curl
+'
+
+find_proton() {  # the folder of GE-Proton11-12, or nothing
+  local d
+  for d in "$LUTRIS_DATA/lutris/runners/wine/$PROTON" \
+           "$HOME"/.local/share/Steam/compatibilitytools.d/"$PROTON"{,-x86_64} \
+           "$HOME"/.steam/root/compatibilitytools.d/"$PROTON"{,-x86_64}; do
+    [[ -f "$d/proton" ]] && { echo "$d"; return; }
+  done
+  return 0
+}
+
+find_innoextract() {  # Lutris' own innoextract (static build) first, then the system's
+  local inno
+  for inno in "$LUTRIS_DATA"/lutris/runtime/innoextract*/innoextract; do
+    [[ -f "$inno" ]] && { echo "$inno"; return; }
+  done
+  command -v innoextract || true
+}
+
+missing_deps() {  # the needs (first column of DEPS) that are not met
+  local t
+  for t in lutris ffmpeg gamescope python3 zenity glib-compile-schemas; do
+    command -v "$t" >/dev/null || echo "$t"
+  done
+  command -v magick >/dev/null || command -v convert >/dev/null || echo imagemagick
+  if [[ ! -f "$PKG/src/gsfix.so" ]]; then  # not in the git repository, only in the release archive
+    command -v gcc >/dev/null || echo gcc
+    printf '#include <wayland-client-core.h>\n#include <wayland-client-protocol.h>\n' |
+      gcc -fsyntax-only -x c - 2>/dev/null || echo wayland
+  fi
+  if [[ -n "$GOG" || -n "$DVD" ]] && [[ -z "$(find_innoextract)" ]]; then echo innoextract; fi
+  if [[ -z "$(find_proton)" ]]; then command -v curl >/dev/null || echo curl; fi
+}
+
+install_deps() {
+  local needs pm col pkgs=() n
+  mapfile -t needs < <(missing_deps | sort -u)
+  [[ ${#needs[@]} -gt 0 ]] || return 0
+  for pm in apt-get dnf pacman zypper; do command -v "$pm" >/dev/null && break; pm=""; done
+  [[ -n "$pm" ]] || die "missing: ${needs[*]}. Please install them with your package manager."
+  case "$pm" in apt-get) col=2 ;; dnf) col=3 ;; pacman) col=4 ;; zypper) col=5 ;; esac
+  for n in "${needs[@]}"; do
+    pkgs+=("$(awk -v n="$n" -v c="$col" '$1 == n { print $c }' <<< "$DEPS")")
+  done
+  echo "Missing: ${needs[*]}"
+  echo "Installing the packages ${pkgs[*]} with $pm ..."
+  if [[ " ${needs[*]} " == *" lutris "* ]] && command -v flatpak >/dev/null &&
+     flatpak info net.lutris.Lutris >/dev/null 2>&1; then
+    echo "(Lutris is installed as a Flatpak; the installation needs the distribution package as well.)"
+  fi
+  local sudo=(); [[ $EUID -eq 0 ]] || sudo=(sudo)
+  case "$pm" in
+    apt-get) "${sudo[@]}" apt-get update && "${sudo[@]}" apt-get install "${pkgs[@]}" ;;
+    dnf)     "${sudo[@]}" dnf install "${pkgs[@]}" ;;
+    pacman)  "${sudo[@]}" pacman -S --needed "${pkgs[@]}" ;;
+    zypper)  "${sudo[@]}" zypper install "${pkgs[@]}" ;;
+  esac || die "the installation of ${pkgs[*]} failed"
+  mapfile -t needs < <(missing_deps | sort -u)
+  [[ ${#needs[@]} -eq 0 ]] || die "still missing after the installation: ${needs[*]}"
+}
+
+install_deps
+command -v ffprobe >/dev/null || die "ffprobe is missing (it comes with ffmpeg)"
+# Fedora's ffmpeg-free may lack codecs; the Indeo videos need these two (RPM Fusion's ffmpeg has them)
+codecs="$(ffmpeg -hide_banner -decoders 2>/dev/null; ffmpeg -hide_banner -encoders 2>/dev/null)"
+[[ "$codecs" == *" indeo3 "* && "$codecs" == *" msvideo1 "* ]] ||
+  die "ffmpeg cannot convert the videos (Indeo 3 decoder or Microsoft Video 1 encoder missing). On Fedora, install ffmpeg from RPM Fusion."
 if [[ ! -f "$PKG/src/gsfix.so" ]]; then
-  command -v gcc >/dev/null || die "src/gsfix.so is missing and gcc is not installed"
   gcc -O2 -Wall -shared -fPIC -o "$PKG/src/gsfix.so" "$PKG/src/gsfix.c" -ldl || die "could not build gsfix.so"
 fi
 
-LUTRIS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
-
 # --- Inno Setup installers (GOG, 2007 CD) -----------------------------------------
 inno_prepare() {
-  # Lutris' own innoextract (static build) first, then the system's
-  INNO=""
-  for inno in "$LUTRIS_DATA"/lutris/runtime/innoextract*/innoextract; do
-    [[ -f "$inno" ]] && { INNO="$inno"; break; }
-  done
-  [[ -n "$INNO" ]] || INNO="$(command -v innoextract || true)"
+  INNO="$(find_innoextract)"
   [[ -n "$INNO" ]] || die "innoextract is missing, please install it with your package manager"
-  for t in as ld objcopy nm; do   # GNU binutils (come with gcc), for the 1.01 changes (src/a2v101.S)
-    command -v "$t" >/dev/null || die "$t (GNU binutils) is missing, please install it with your package manager"
-  done
   TMPX="$(mktemp -d)"; trap 'rm -rf "$TMPX"' EXIT
 }
 
@@ -170,12 +246,9 @@ cd_prepare() {
   [[ -n "$ICO" ]] || die "No anstoss2.ico found in the root folder of the CD"
 }
 
-[[ -z "$CD" || -d "$CD" ]] || die "$CD not found"
-# The "ANSTOSS 2007" DVD: Anstoss 2 Gold of 2007 is an Inno Setup installer in ANSTOSS_2_GOLD
-[[ -z "$CD" ]] || DVD="$(find "$(cd "$CD" && pwd)" -maxdepth 2 -ipath '*/anstoss_2_gold/setup.exe' 2>/dev/null | head -1)"
 if [[ -n "$GOG" ]]; then
   # "GOG" in the version makes Lutris treat it as a game of its GOG service (folder ~/Games/gog/<slug>)
-  SLUG="anstoss-2-gold-edition"; NAME="Anstoss 2 Gold (GOG)"; VERSION="GOG 1.0 fix2"; EXE="run.exe"; FIXES="--disc-check --v101"; VARIANT=GOG
+  SLUG="anstoss-2-gold-gog"; NAME="Anstoss 2 Gold (GOG)"; VERSION="GOG 1.0 fix2"; EXE="run.exe"; FIXES="--disc-check --v101"; VARIANT=GOG
   gog_prepare
 elif [[ -n "$DVD" ]]; then
   SLUG="anstoss-2-gold-2007"; NAME="Anstoss 2 Gold (2007)"; VERSION="CD 2007"; EXE="run.exe"; FIXES="--disc-check --v101"; VARIANT=DVD
@@ -205,17 +278,26 @@ IM="$(command -v magick || command -v convert)"  # ffmpeg would lose the icon's 
     || die "could not convert $ICO"
 
 # --- Proton for Lutris ----------------------------------------------------------
-# Lutris drops "-x86_64" from GE-Proton names and would then look for (and try to download)
-# "GE-Proton11-12". A link with that name in its own runner folder points it to the installed one.
+# Missing GE-Proton11-12 is downloaded from GitHub (checked against its SHA-512) to Steam's folder
+# for compatibility tools. Lutris drops "-x86_64" from GE-Proton names and would then look for (and
+# try to download) "GE-Proton11-12". A link with that name in its own runner folder points it there.
 WINE_DIR="$LUTRIS_DATA/lutris/runners/wine"
+if [[ -z "$(find_proton)" ]]; then
+  url="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/$PROTON/$PROTON-x86_64"
+  tools="$HOME/.local/share/Steam/compatibilitytools.d"
+  dl="$(mktemp -d)"
+  echo "Downloading $PROTON (about 570 MB) ..."
+  curl -fL --progress-bar -o "$dl/$PROTON-x86_64.tar.gz" "$url.tar.gz" || die "could not download $PROTON"
+  curl -fsSL -o "$dl/$PROTON-x86_64.sha512sum" "$url.sha512sum" || die "could not download the checksum of $PROTON"
+  (cd "$dl" && sha512sum -c --quiet "$PROTON-x86_64.sha512sum") || die "$PROTON: checksum does not match"
+  mkdir -p "$tools"
+  tar -xzf "$dl/$PROTON-x86_64.tar.gz" -C "$tools" || die "could not unpack $PROTON"
+  rm -rf "$dl"
+fi
 if [[ ! -f "$WINE_DIR/$PROTON/proton" ]]; then
-  for d in "$HOME"/.local/share/Steam/compatibilitytools.d/"$PROTON"{,-x86_64} \
-           "$HOME"/.steam/root/compatibilitytools.d/"$PROTON"{,-x86_64}; do
-    if [[ -f "$d/proton" ]]; then
-      mkdir -p "$WINE_DIR"; ln -sfn "$d" "$WINE_DIR/$PROTON"; break
-    fi
-  done
-  [[ -f "$WINE_DIR/$PROTON/proton" ]] || die "$PROTON not found. Extract $PROTON-x86_64.tar.gz from https://github.com/GloriousEggroll/proton-ge-custom/releases to ~/.local/share/Steam/compatibilitytools.d/"
+  d="$(find_proton)"
+  [[ -n "$d" ]] || die "$PROTON not found. Extract $PROTON-x86_64.tar.gz from https://github.com/GloriousEggroll/proton-ge-custom/releases to ~/.local/share/Steam/compatibilitytools.d/"
+  mkdir -p "$WINE_DIR"; ln -sfn "$d" "$WINE_DIR/$PROTON"
 fi
 
 # --- Fonts --------------------------------------------------------------------
