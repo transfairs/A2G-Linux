@@ -8,7 +8,7 @@ This repository contains no files from the game, from Microsoft or other third p
 
 - Lutris as a regular distribution package, not the Flatpak
 - GE-Proton11-12 (see below)
-- `ffmpeg`, `gamescope`, `imagemagick`, `python3`, `zenity`, `glib-compile-schemas` and `gcc` from your package manager
+- `ffmpeg`, `gamescope`, `imagemagick`, `python3`, `zenity`, `glib-compile-schemas` and `gcc` from your package manager, plus the Wayland headers for building `gsfix.so` (Debian/Ubuntu `libwayland-dev`, Fedora `wayland-devel`; on Arch they come with `wayland`)
 - optional: the Microsoft core fonts package of your distribution (e.g. `ttf-mscorefonts-installer`) for the original Impact in headings (see [Fonts](#fonts))
 - the original CD or the DVD "ANSTOSS 2007" (inserted) or an ISO image of it (mount it by double-clicking in the file manager or with `udisksctl loop-setup -f anstoss2.iso`), or the GOG installer `setup_anstoss_2_gold_der_fuballmanager_1.0_fix2_(german)_(48434).exe`
 - for the GOG installer and the 2007 DVD: `innoextract` (Lutris brings its own under `~/.local/share/lutris/runtime/`; otherwise from your package manager)

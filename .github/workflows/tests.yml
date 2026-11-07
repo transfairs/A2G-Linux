@@ -28,10 +28,10 @@ jobs:
             3.13
             3.14
 
-      # MinGW-w64 for a2start.exe and a2setup.exe (tox env "build"); GNU binutils (as, ld) for the
-      # 1.01 code in src/a2v101.S come with the runner.
-      - name: Install MinGW-w64
-        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+      # MinGW-w64 for a2start.exe and a2setup.exe, the Wayland headers for gsfix.so (tox env "build");
+      # GNU binutils (as, ld) for the 1.01 code in src/a2v101.S come with the runner.
+      - name: Install MinGW-w64 and Wayland headers
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 libwayland-dev
 
       - name: Install tox
         run: python -m pip install tox
