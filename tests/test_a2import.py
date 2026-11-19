@@ -1,5 +1,6 @@
 """a2import.py: case-insensitive merge of data sets and save games."""
 
+import runpy
 import sys
 import zipfile
 
@@ -124,3 +125,13 @@ def test_zenity_cancel_and_failure(monkeypatch):
     monkeypatch.setattr(imp.subprocess, "run", missing)
     with pytest.raises(SystemExit, match="zenity is missing"):
         imp.zenity([])
+
+
+def test_run_as_script(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["a2import.py", "none", str(tmp_path)])
+    runpy.run_path(imp.__file__, run_name="__main__")
+    assert list(tmp_path.iterdir()) == []
+    monkeypatch.setattr(sys, "argv", ["a2import.py", "bogus", str(tmp_path)])
+    with pytest.raises(SystemExit) as e:
+        runpy.run_path(imp.__file__, run_name="__main__")
+    assert e.value.code == 2

@@ -11,9 +11,9 @@ Patch 1.01 changes three data files; all three are made here from the GOG files 
   with the low byte of the length), the two characters are changed and the file is encrypted again;
   written under both names. The result is identical to the file of patch 1.01.
 - DATA.DEF/LAENDER.SAV, DATA.VER/LAENDER.SAV: one value changes from 3 to 4 (identical to 1.01).
-- ARCHIVES/MoveList.dat: new in 1.01, the animation of a sign in a video window
-  (probably the cup draw). Computed by
-  src/a2movelist.py (see there; inside the sign at most one pixel off the file of 1.01).
+- ARCHIVES/MoveList.dat: new in 1.01, the animation of the sign in the video window
+  of the cup draw. Computed by src/a2movelist.py (see there; inside the sign at most one pixel off
+  the file of 1.01).
 
 Inputs and results are checked against their SHA-256; on a mismatch the file is left unchanged and
 the exit code is 1. Originals are kept as <name>.vor-1.01.
@@ -55,11 +55,13 @@ def game_path(game, rel):
 
 
 def read(path):
+    """The contents of the file at path."""
     with open(path, "rb") as f:
         return f.read()
 
 
 def write(path, data):
+    """Writes data to path; an existing file is kept as <path>.vor-1.01 unless that backup exists already."""
     if os.path.exists(path) and not os.path.exists(path + BACKUP_SUFFIX):
         shutil.copy2(path, path + BACKUP_SUFFIX)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -92,6 +94,7 @@ def events_101(data):
 
 
 def laender_101(data):
+    """LAENDER.SAV of 1.01 made from the one of 1.00 ("3" -> "4"), or None if that byte is not "3"."""
     if len(data) <= LAENDER_AT or data[LAENDER_AT] != LAENDER_OLD:
         return None
     data = bytearray(data)
@@ -126,6 +129,8 @@ def change(game, rels, make, hashes, label):
 
 
 def main():
+    """Brings the event texts, LAENDER.SAV and MoveList.dat of the game folder to 1.01; exit status 1 if one
+    of them was left out."""
     if len(sys.argv) != 2:
         sys.exit(__doc__.strip().splitlines()[2].strip())
     game = sys.argv[1]

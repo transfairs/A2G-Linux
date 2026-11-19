@@ -1,5 +1,6 @@
 """a2unpack.py on a synthetic packed file: no game files needed."""
 
+import runpy
 import struct
 import sys
 
@@ -65,6 +66,31 @@ def test_lzw_roundtrip(data):
 def test_lzw_stops_at_the_limit():
     data = bytes(range(200)) * 10
     assert u.lzw(lzw_encode(data), 100) == data[:100]
+
+
+def lzw_codes(codes):
+    """A stream of the given codes after a clear, with the code widths the decoder expects, never clearing."""
+    out, acc, nbits = bytearray(), 0, 0
+    width, next_code = 9, 0x102
+    for i, code in enumerate([0x100, *codes, 0x101]):
+        acc |= code << nbits
+        nbits += width
+        while nbits >= 8:
+            out.append(acc & 0xFF)
+            acc >>= 8
+            nbits -= 8
+        if i > 1 and next_code < 0x1000:  # the decoder defines a code from the second one after a clear on
+            next_code += 1
+            if next_code == 1 << width and width < 12:
+                width += 1
+    if nbits:
+        out.append(acc & 0xFF)
+    return bytes(out)
+
+
+def test_lzw_full_table_without_clear():
+    data = bytes((i * 13) & 0xFF for i in range(5000))  # more codes than the table has room for
+    assert u.lzw(lzw_codes(data), len(data)) == data
 
 
 def rdata_with_imports():
@@ -163,6 +189,19 @@ def test_main(tmp_path, monkeypatch, capsys):
     assert "already unpacked" in capsys.readouterr().out
 
 
+def test_main_keeps_an_existing_backup(tmp_path, monkeypatch):
+    packed, _, _ = packed_file()
+    exe = tmp_path / "run.exe"
+    exe.write_bytes(packed)
+    backup = tmp_path / "run.exe.vor-entpacken"
+    backup.write_bytes(b"older backup")
+    monkeypatch.setattr(u, "PACKED", u.sha(packed))
+    monkeypatch.setattr(u, "RESULT", u.sha(u.unpack(packed)))
+    run_main(monkeypatch, str(exe))
+    assert u.sha(exe.read_bytes()) == u.RESULT
+    assert backup.read_bytes() == b"older backup"
+
+
 def test_main_unknown_file(tmp_path, monkeypatch):
     exe = tmp_path / "run.exe"
     exe.write_bytes(b"MZ something else")
@@ -186,3 +225,10 @@ def test_main_usage(monkeypatch):
     with pytest.raises(SystemExit) as e:
         run_main(monkeypatch)
     assert "a2unpack.py" in str(e.value.code)
+
+
+def test_runs_as_a_script(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["a2unpack.py"])
+    with pytest.raises(SystemExit) as e:
+        runpy.run_path(u.__file__, run_name="__main__")
+    assert e.value.code == "a2unpack.py <path to run.exe>"

@@ -7,7 +7,7 @@ with 12 px width for the club names, Windows doubles the characters horizontally
 only widens the gaps instead. This font already contains double-width characters, so
 Wine draws it at natural size exactly as Windows does.
 
-  mkwide.py sserife.fon <prefix>   creates <prefix>20.fnt and <prefix>24.fnt
+  mkwide.py sserife.fon <prefix>   creates <prefix>20.fnt and <prefix>24.fnt (the sizes the .fon has)
 """
 
 import struct
@@ -18,6 +18,7 @@ HEIGHTS = (20, 24)
 
 
 def fnt_resources(data):
+    """Yields the font resources (RT_FONT) of the NE file data (a .fon)."""
     ne = struct.unpack_from("<I", data, 0x3C)[0]
     rt = ne + struct.unpack_from("<H", data, ne + 0x24)[0]
     shift = struct.unpack_from("<H", data, rt)[0]
@@ -35,6 +36,7 @@ def fnt_resources(data):
 
 
 def parse_fnt(f):
+    """The header values and glyphs ({char: (width, rows of (bits, bit count))}) of the FNT font f."""
     ver = struct.unpack_from("<H", f, 0)[0]
     (ascent,) = struct.unpack_from("<H", f, 74)
     (weight,) = struct.unpack_from("<H", f, 83)
@@ -64,6 +66,7 @@ def parse_fnt(f):
 
 
 def widen(bits, nbits, w):
+    """The w leftmost of nbits bits, each doubled (2*w bits)."""
     out = 0
     for x in range(w):
         b = (bits >> (nbits - 1 - x)) & 1
@@ -107,6 +110,8 @@ def build_fnt(raw, fn):
 
 
 def main(src, dst):
+    """Writes <dst><height>.fnt with double-width characters for each normal-weight font in src whose
+    height is in HEIGHTS and prints the names; exits if there is none."""
     out = []
     for raw in fnt_resources(open(src, "rb").read()):
         fn = parse_fnt(raw)

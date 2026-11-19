@@ -96,6 +96,7 @@ def dumps(prebuilt):
 
 
 def main():
+    """Writes a fresh build to OUTPUT; with --check, exits with a message if OUTPUT differs from it."""
     check = sys.argv[1:] == ["--check"]
     if sys.argv[1:] and not check:
         sys.exit(__doc__)

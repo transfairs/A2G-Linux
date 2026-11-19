@@ -151,6 +151,8 @@ def unpack(packed):
 
 
 def main():
+    """Unpacks run.exe in place if it is the packed file of the 2007 CD and the result has the expected
+    SHA-256, keeping the original as backup; exit status 1 for any other file."""
     if len(sys.argv) != 2:
         sys.exit(__doc__.strip().splitlines()[2].strip())
     exe = sys.argv[1]

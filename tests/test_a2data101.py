@@ -1,5 +1,6 @@
 """a2data101.py and a2movelist.py: event texts, LAENDER.SAV and MoveList.dat."""
 
+import runpy
 import struct
 import sys
 
@@ -122,3 +123,19 @@ def test_main_usage(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["a2data101.py"])
     with pytest.raises(SystemExit, match="a2data101.py <game folder>"):
         d.main()
+
+
+def test_main_movelist_unexpected(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(d, "MOVELIST", "0" * 64)
+    monkeypatch.setattr(sys, "argv", ["a2data101.py", str(tmp_path)])
+    with pytest.raises(SystemExit) as e:
+        d.main()
+    assert e.value.code == 1
+    assert "MoveList.dat: unexpected result" in capsys.readouterr().out
+    assert not (tmp_path / "ARCHIVES" / "MoveList.dat").exists()
+
+
+def test_run_as_script(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["a2data101.py"])
+    with pytest.raises(SystemExit, match="a2data101.py <game folder>"):
+        runpy.run_path(d.__file__, run_name="__main__")

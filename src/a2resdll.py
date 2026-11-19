@@ -136,16 +136,18 @@ def string_end(b, o):
 
 
 class Mismatch(Exception):
-    pass
+    """A dialog template is not as in GOG's file."""
 
 
 def put(b, o, fmt, old, new):
+    """Writes new (struct format fmt) at offset o of b; raises Mismatch if the value there is not old."""
     if struct.unpack_from(fmt, b, o)[0] != old:
         raise Mismatch(f"{struct.unpack_from(fmt, b, o)[0]:#x} instead of {old:#x} at {o:#x}")
     struct.pack_into(fmt, b, o, new)
 
 
 def in_table(table, lang, did):
+    """Whether table ({language: dialog ids}) lists dialog did for language lang."""
     return did in table.get(lang, ())
 
 
@@ -216,6 +218,8 @@ def restore(pe):
 
 
 def main():
+    """Writes the 1999 dialog styles into RESDLL.dll of the game folder, from the backup if there is one;
+    exit status 1 unless that is GOG's file and the result has the expected SHA-256."""
     if len(sys.argv) != 2:
         sys.exit(__doc__.strip().splitlines()[2].strip())
     game = sys.argv[1]

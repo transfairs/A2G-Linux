@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Makes ARCHIVES/MoveList.dat, new in patch 1.01: the animation of a sign flying into a video window
-(probably the cup draw), 34 frames.
+"""Makes ARCHIVES/MoveList.dat, new in patch 1.01: the animation of the sign flying into the video
+window of the cup draw, 34 frames.
 
     a2movelist.py <output file>
 
@@ -89,6 +89,7 @@ def homography(corners):
 
 
 def frame(width, height, corners):
+    """The lookup table of one frame (a picture offset per pixel), all 0 if corners is None."""
     if corners is None:
         return [0] * (width * height)
     a, b, c, d, e, f, g, h = homography(corners)
@@ -103,6 +104,7 @@ def frame(width, height, corners):
 
 
 def build():
+    """The contents of MoveList.dat: the frame count, then each frame's header and lookup table."""
     data = [struct.pack("<H", len(PATH))]
     for number, x, y, width, height, corners in PATH:
         data.append(struct.pack("<5H", number, x, y, width, height))
@@ -111,6 +113,7 @@ def build():
 
 
 def main():
+    """Writes build() to the file named on the command line."""
     if len(sys.argv) != 2:
         sys.exit(__doc__.strip().splitlines()[3].strip())
     with open(sys.argv[1], "wb") as f:

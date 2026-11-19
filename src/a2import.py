@@ -58,6 +58,7 @@ def match(folder, name):
 
 
 def unwrap(src, game):
+    """The only entry of src (__MACOSX aside) if it is a folder the game folder has not, else src."""
     entries = [e for e in os.listdir(src) if not e.startswith("__MACOSX")]
     if (
         len(entries) == 1
@@ -69,6 +70,8 @@ def unwrap(src, game):
 
 
 def merge(src, dst, overwrite, counts):
+    """Copies src into dst recursively, names matched without regard to case; existing files are kept unless
+    overwrite. Counts the added, replaced and kept files in counts."""
     for name in sorted(os.listdir(src)):
         s = os.path.join(src, name)
         d = os.path.join(dst, match(dst, name))
@@ -83,6 +86,8 @@ def merge(src, dst, overwrite, counts):
 
 
 def main():
+    """Merges the source (given, or chosen in a dialog) into the game folder and prints the counts; a zip
+    file is extracted first and refused if it holds an absolute path or ".."."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--title", default="Auswählen")
