@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * gsfix.so: LD_PRELOAD add-on for Gamescope (Wayland backend, GNOME). Three jobs:
+ * gsfix.so: LD_PRELOAD add-on for Gamescope (Wayland backend, GNOME). Four jobs:
  *
  * 1. Keep clicks on the window frame away from the game (always active).
  * 2. GSFIX_WMNAME: Gamescope registers with X as window manager "steamcompmgr". Proton detects
@@ -14,6 +14,13 @@
  *    Title and app ID are sent again whenever Gamescope commits its window surface without a
  *    buffer: GNOME (Mutter) then replaces the window by a new one without title and app ID, and
  *    the dock showed a generic icon instead of the one from the .desktop file.
+ * 4. Keyboard layout of the host (always active): Gamescope builds the layout it gives its X
+ *    server (Xwayland) from XKB_DEFAULT_LAYOUT etc., US English if they are not set, and ignores
+ *    the layout the desktop sends to its window. The desktop's layout is caught and handed to
+ *    Gamescope instead (unless XKB_DEFAULT_LAYOUT is set). Gamescope passes it to Xwayland only
+ *    once a window has the keyboard focus, but Wine reads the layout when it starts, so it is also
+ *    loaded into Xwayland right before the game is started, with xkbcomp (which Xwayland itself
+ *    needs, so it is always installed).
  *
  * About 1: Gamescope forwards every mouse click to the game, including clicks on the window
  * frame or title bar (libdecor). When the frame is dragged, GNOME takes over the mouse and the
@@ -31,12 +38,17 @@
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <glob.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
@@ -177,9 +189,15 @@ static int from_gamescope(const void *impl) {
     return strcmp(base, "gamescope") == 0;
 }
 
+static int add_keyboard_listener(struct wl_proxy *proxy, void (**impl)(void), void *data,
+                                 int (*real)(struct wl_proxy *, void (**)(void), void *));
+
 int wl_proxy_add_listener(struct wl_proxy *proxy, void (**impl)(void), void *data) {
     static int (*real)(struct wl_proxy *, void (**)(void), void *);
     if (!real) real = (int (*)(struct wl_proxy *, void (**)(void), void *))dlsym(RTLD_NEXT, "wl_proxy_add_listener");
+
+    if (active && strcmp(wl_proxy_get_class(proxy), "wl_keyboard") == 0 && from_gamescope(impl))
+        return add_keyboard_listener(proxy, impl, data, real);
 
     if (active && strcmp(wl_proxy_get_class(proxy), "wl_pointer") == 0 && from_gamescope(impl)) {
         struct ctx *c = calloc(1, sizeof *c);
@@ -287,4 +305,122 @@ struct wl_proxy *wl_proxy_marshal_flags(struct wl_proxy *proxy, uint32_t opcode,
         }
     }
     return ret;
+}
+
+/* --- 4. Keyboard layout ------------------------------------------------------------------ */
+struct xkb_context;
+struct xkb_keymap;
+static char *keymap;   /* the desktop's keymap (XKB text), or NULL; set by Gamescope's input thread */
+
+static const char *get_keymap(void) { return __atomic_load_n(&keymap, __ATOMIC_ACQUIRE); }
+
+/* Gamescope's own keymap, from which Xwayland gets its layout: the desktop's instead of the one
+ * named by XKB_DEFAULT_*. Gamescope asks for it at startup, maybe before its input thread has
+ * received the desktop's, so this waits for it for up to 2 seconds. */
+struct xkb_keymap *xkb_keymap_new_from_names(struct xkb_context *ctx, const void *names, int flags) {
+    static struct xkb_keymap *(*real)(struct xkb_context *, const void *, int);
+    static struct xkb_keymap *(*from_string)(struct xkb_context *, const char *, int, int);
+    if (!real) real = (struct xkb_keymap *(*)(struct xkb_context *, const void *, int))dlsym(RTLD_NEXT, "xkb_keymap_new_from_names");
+    if (!from_string) from_string = (struct xkb_keymap *(*)(struct xkb_context *, const char *, int, int))
+        dlsym(RTLD_NEXT, "xkb_keymap_new_from_string");
+    const char *layout = getenv("XKB_DEFAULT_LAYOUT");
+    if (active && from_string && !(layout && *layout) && from_gamescope(__builtin_return_address(0))) {
+        for (int i = 0; i < 200 && !get_keymap(); i++) usleep(10000);
+        const char *km = get_keymap();
+        struct xkb_keymap *m = km ? from_string(ctx, km, 1 /* XKB_KEYMAP_FORMAT_TEXT_V1 */, 0) : NULL;
+        if (m) return m;
+    }
+    return real(ctx, names, flags);
+}
+
+/* Loads the keymap into the X server in DISPLAY (Gamescope's Xwayland), with xkbcomp. */
+static void load_keymap(void) {
+    const char *dpy = getenv("DISPLAY"), *km = get_keymap(), *layout = getenv("XKB_DEFAULT_LAYOUT");
+    if (!km || !dpy || !*dpy || (layout && *layout)) return;
+    int sv[2];  /* socket instead of a pipe: send() with MSG_NOSIGNAL, no SIGPIPE if xkbcomp fails */
+    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0) return;
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, sv[1], 0);
+    posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    char *argv[] = {"xkbcomp", "-w", "0", "-", (char *)dpy, NULL};
+    pid_t pid;
+    int rc = posix_spawnp(&pid, "xkbcomp", &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    close(sv[1]);
+    if (rc == 0) {
+        for (size_t len = strlen(km), off = 0; off < len;) {
+            ssize_t w = send(sv[0], km + off, len - off, MSG_NOSIGNAL);
+            if (w <= 0) break;
+            off += w;
+        }
+    }
+    close(sv[0]);
+    if (rc == 0) waitpid(pid, NULL, 0);
+}
+
+struct kctx {
+    const struct wl_keyboard_listener *orig;
+    void *data;
+};
+
+/* Only the first keymap is kept: Gamescope builds its own keymap once, at startup. */
+static void k_keymap(void *d, struct wl_keyboard *k, uint32_t format, int32_t fd, uint32_t size) {
+    struct kctx *c = d;
+    if (!get_keymap() && format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 && size > 0) {
+        char *m = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (m != MAP_FAILED) {
+            char *copy = strndup(m, size);
+            munmap(m, size);
+            if (copy) __atomic_store_n(&keymap, copy, __ATOMIC_RELEASE);
+        }
+    }
+    c->orig->keymap(c->data, k, format, fd, size);
+}
+static void k_enter(void *d, struct wl_keyboard *k, uint32_t serial, struct wl_surface *s, struct wl_array *keys) {
+    struct kctx *c = d;
+    if (c->orig->enter) c->orig->enter(c->data, k, serial, s, keys);
+}
+static void k_leave(void *d, struct wl_keyboard *k, uint32_t serial, struct wl_surface *s) {
+    struct kctx *c = d;
+    if (c->orig->leave) c->orig->leave(c->data, k, serial, s);
+}
+static void k_key(void *d, struct wl_keyboard *k, uint32_t serial, uint32_t t, uint32_t key, uint32_t st) {
+    struct kctx *c = d;
+    if (c->orig->key) c->orig->key(c->data, k, serial, t, key, st);
+}
+static void k_modifiers(void *d, struct wl_keyboard *k, uint32_t serial, uint32_t dep, uint32_t lat,
+                        uint32_t lock, uint32_t group) {
+    struct kctx *c = d;
+    if (c->orig->modifiers) c->orig->modifiers(c->data, k, serial, dep, lat, lock, group);
+}
+static void k_repeat_info(void *d, struct wl_keyboard *k, int32_t rate, int32_t delay) {
+    struct kctx *c = d;
+    if (c->orig->repeat_info) c->orig->repeat_info(c->data, k, rate, delay);
+}
+
+static const struct wl_keyboard_listener kwrap = {
+    .keymap = k_keymap, .enter = k_enter, .leave = k_leave, .key = k_key,
+    .modifiers = k_modifiers, .repeat_info = k_repeat_info,
+};
+
+static int add_keyboard_listener(struct wl_proxy *proxy, void (**impl)(void), void *data,
+                                 int (*real)(struct wl_proxy *, void (**)(void), void *)) {
+    const struct wl_keyboard_listener *orig = (const struct wl_keyboard_listener *)impl;
+    struct kctx *c = orig->keymap ? calloc(1, sizeof *c) : NULL;
+    if (!c) return real(proxy, impl, data);
+    c->orig = orig;
+    c->data = data;
+    return real(proxy, (void (**)(void))&kwrap, c);
+}
+
+/* Gamescope starts the game with fork() and execvp(): load the keymap in the child, before the
+ * game. Xwayland is up once Gamescope has set GAMESCOPE_WAYLAND_DISPLAY (with DISPLAY pointing to
+ * it); it is started earlier, while that is not set yet. */
+int execvp(const char *file, char *const argv[]) {
+    static int (*real)(const char *, char *const[]);
+    if (!real) real = (int (*)(const char *, char *const[]))dlsym(RTLD_NEXT, "execvp");
+    if (active && getenv("GAMESCOPE_WAYLAND_DISPLAY")) load_keymap();
+    return real(file, argv);
 }
