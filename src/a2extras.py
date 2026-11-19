@@ -10,7 +10,8 @@
   and anstoss-2-gog, so every installation gets its own menu entries)
 - trainer "download": fetches the latest release zip from GitHub; "file": a zip or exe given as
   third argument or chosen in a dialog; A2G-Trainer.exe goes to C:\\Spiele\\A2G-Trainer
-- takes the icons out of Editor.exe and A2G-Trainer.exe
+- installs the editor's icon, a football drawn for A2G-Linux (src/editor-icon.svg and .png), and
+  takes the trainer's icon out of A2G-Trainer.exe
 - writes the .desktop files "Anstoss 2 Editor" and "A2G-Trainer" for the application menu
   (without the trainer, an entry left from an earlier installation is removed)
 - refreshes the icon cache of ~/.local/share/icons/hicolor, so that GNOME finds these icons and
@@ -77,6 +78,56 @@ def pe_resources(path):
     return res
 
 
+def neighbours(pixels, w, h, i, diagonal=False):
+    """The 4 orthogonal (or diagonal) neighbours of pixel i, None outside the picture."""
+    x, y = i % w, i // w
+    steps = ((1, 1), (-1, -1), (1, -1), (-1, 1)) if diagonal else ((1, 0), (-1, 0), (0, 1), (0, -1))
+    return [pixels[(y + dy) * w + x + dx] if 0 <= x + dx < w and 0 <= y + dy < h else None for dx, dy in steps]
+
+
+def dedither(pixels, w, h):
+    """pixels (RGBA tuples, row by row) with checkerboard dithering blended into the mixed colour.
+
+    Old 16 colour icons fake missing colours with two colours alternating pixel by pixel. A pixel
+    whose orthogonal neighbours mostly share one other colour while its diagonal neighbours share
+    its own is part of such a pattern and gets the mean of both.
+    """
+    out = list(pixels)
+    for i, p in enumerate(pixels):
+        orth = neighbours(pixels, w, h, i)
+        others = [q for q in orth if q and q != p and q[3]]
+        if not p[3] or not others:
+            continue
+        q = max(others, key=others.count)
+        if orth.count(q) >= 2 and neighbours(pixels, w, h, i, True).count(p) >= 2:
+            out[i] = tuple((a + b) // 2 for a, b in zip(p, q))
+    return out
+
+
+def pixel_icon(src, png, size=128):
+    """Writes the small pixel art icon src (.ico or any image) as a smooth size x size PNG.
+
+    Dithering is blended first, then xBR doubles the size until it reaches size (ImageMagick's
+    magnify:method, from 7.0.9); an ImageMagick without it scales with sharp pixels instead.
+    """
+    im = shutil.which("magick") or shutil.which("convert")
+    os.makedirs(os.path.dirname(png) or ".", exist_ok=True)
+    pam = subprocess.run([im, src, "-alpha", "set", "-depth", "8", "PAM:-"], capture_output=True, check=True).stdout
+    header, _, data = pam.partition(b"ENDHDR\n")
+    fields = dict(line.split(b" ", 1) for line in header.splitlines()[1:] if b" " in line)
+    w, h = int(fields[b"WIDTH"]), int(fields[b"HEIGHT"])
+    pixels = dedither([tuple(data[i : i + 4]) for i in range(0, 4 * w * h, 4)], w, h)
+    raw = bytes(c for p in pixels for c in p)
+    magnify, n = [], max(w, h)
+    while n < size:
+        magnify += ["-define", "magnify:method=xbr2X", "-magnify"]
+        n *= 2
+    given = [im, "-size", f"{w}x{h}", "-depth", "8", "RGBA:-"]
+    out = ["-resize", f"{size}x{size}", "PNG32:" + png]
+    if subprocess.run(given + magnify + out, input=raw, check=False).returncode:
+        subprocess.run(given + ["-filter", "point"] + out, input=raw, check=True)
+
+
 def exe_icon(exe, png, size=128):
     """Writes the largest icon of exe as a size x size PNG."""
     res = pe_resources(exe)
@@ -94,13 +145,15 @@ def exe_icon(exe, png, size=128):
     with tempfile.NamedTemporaryFile(suffix=".ico") as f:
         f.write(ico)
         f.flush()
-        im = shutil.which("magick") or shutil.which("convert")
-        # Pixel art (old 32x32 icons) stays sharp, large icons are scaled smoothly
-        flt = ["-filter", "point"] if (w or 256) < 64 else []
-        subprocess.run([im, f.name] + flt + ["-resize", f"{size}x{size}", "PNG32:" + png], check=True)
+        if (w or 256) < 64:  # pixel art (old 16 to 48 px icons)
+            pixel_icon(f.name, png, size)
+        else:
+            im = shutil.which("magick") or shutil.which("convert")
+            subprocess.run([im, f.name, "-resize", f"{size}x{size}", "PNG32:" + png], check=True)
 
 
 def install_trainer(source, target_dir):
+    """Copies the exe (or the first exe in the zip) source to target_dir as A2G-Trainer.exe; returns its path."""
     os.makedirs(target_dir, exist_ok=True)
     exe = os.path.join(target_dir, "A2G-Trainer.exe")
     if zipfile.is_zipfile(source):
@@ -116,6 +169,7 @@ def install_trainer(source, target_dir):
 
 
 def desktop_file(name, comment, exec_args, icon, wm_class):
+    """Writes <icon>.desktop for a game to the applications folder of XDG_DATA_HOME; returns its path."""
     path = os.path.join(DATA, "applications", icon + ".desktop")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -177,6 +231,9 @@ def refresh_icon_cache(hicolor):
 
 
 def main():
+    """Copies a2run.sh with the slug into the prefix folder, installs the editor's icons and menu entry,
+    then the trainer with its icon and menu entry (or removes those of an earlier installation), and
+    refreshes the icon cache."""
     args = sys.argv[1:]
     slug = "anstoss-2-gold"
     if args[:1] == ["--slug"] and len(args) > 1:
@@ -184,7 +241,6 @@ def main():
     if len(args) not in (2, 3) or args[1] not in ("none", "download", "file"):
         sys.exit(__doc__.strip().splitlines()[2].strip())
     gamedir, mode = args[0], args[1]
-    game = os.path.join(gamedir, "drive_c", "Spiele", "Anstoss 2 Gold")
     suffix = SUFFIXES.get(slug, " (GOG)")
 
     run = os.path.join(gamedir, "a2run.sh")
@@ -198,11 +254,17 @@ def main():
     # The start script must be executable
     os.chmod(run, 0o755)  # nosec B103
 
-    icons = os.path.join(DATA, "icons", "hicolor", "128x128", "apps")
+    hicolor = os.path.join(DATA, "icons", "hicolor")
+    icons = os.path.join(hicolor, "128x128", "apps")
     os.makedirs(icons, exist_ok=True)
     q = '"' + run.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`") + '"'
 
-    exe_icon(os.path.join(game, "Editor.exe"), os.path.join(icons, f"{slug}-editor.png"))
+    # The PNG for menus that want 128x128, the SVG for any size
+    shutil.copyfile(os.path.join(HERE, "editor-icon.png"), os.path.join(icons, f"{slug}-editor.png"))
+    os.makedirs(os.path.join(hicolor, "scalable", "apps"), exist_ok=True)
+    shutil.copyfile(
+        os.path.join(HERE, "editor-icon.svg"), os.path.join(hicolor, "scalable", "apps", f"{slug}-editor.svg")
+    )
     print(
         "Written:",
         desktop_file(
@@ -240,7 +302,7 @@ def main():
                 os.remove(old)
                 print("Removed:", old)
         print("A2G-Trainer not installed")
-    refresh_icon_cache(os.path.join(DATA, "icons", "hicolor"))
+    refresh_icon_cache(hicolor)
 
 
 if __name__ == "__main__":
