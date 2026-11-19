@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# install.sh fills in the @...@ values and keeps the blocks "# @BEGIN <variants>" ... "# @END" of its variant
-# (CD: 1999 CD, GOG: GOG installer, DVD: 2007 CD on the "ANSTOSS 2007" DVD)
+# install.sh fills in the @...@ values and keeps the blocks "# @BEGIN <tags>" ... "# @END" of its variant
+# (CD: 1999 CD, GOG: GOG installer, DVD: 2007 CD on the "ANSTOSS 2007" DVD) and, if it could fetch
+# A2G-Icon's icon, those of ICONREPO
 name: @NAME@
 game_slug: @SLUG@
 slug: @SLUG@
@@ -135,6 +136,23 @@ script:
         key: Background
         value: "41 56 74"
         type: REG_SZ
+    # On it, centred, the icon from A2G-Icon or the one picked (the question ICON below; src/a2assets.py
+    # writes a2desktop.bmp only for those, not for the game's own icon; without the file Wine shows
+    # the plain color)
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: Wallpaper
+        value: 'C:\\Spiele\\Anstoss 2 Gold\\a2desktop.bmp'
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: TileWallpaper
+        value: "0"
+        type: REG_SZ
 
     # Bold title bar font as in Royale Noir (LOGFONTW: Tahoma, height 10, weight 700)
     - task:
@@ -154,7 +172,7 @@ script:
         value: gdi
         type: REG_SZ
 
-    # Without this, input stopped arriving after clicking another window
+    # Without this, the game stops reacting to input after another window is clicked
     - task:
         name: set_regedit
         prefix: $GAMEDIR
@@ -249,12 +267,21 @@ script:
     - execute:
         command: 'cp "@PKG@/src/a2start.exe" "@PKG@"/build/a2wide2?.fnt "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/" && cp "@PKG@/src/gsfix.so" "$GAMEDIR/"'
 
-    # Sound on the default audio device instead of the last one found (patch from A2G-Patch, see README);
+    # Bug fixes from A2G-Patch (--fixes, see README): sound on the default audio device, arrow buttons that
+    # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space
+    # warning, squads limited to 30 players, investment growth kept off the bank balance, the club's money
+    # stopping at 2 billion DM instead of running over, random events that do what their message says,
+    # no crash on events without a fitting player, trainers and managers in weak countries improving
+    # yearly, appearances without a mark kept out of the average, a list of the most appearances that
+    # takes new players after 50; and, although A2G-Patch counts them as balancing, fish poisoning that
+    # keeps a player out for the three weeks its message says, all events around the manager's private
+    # life (--fish, --manager) and interview answers that take effect
+    # (--interviews, a balancing patch in A2G-Patch, applied every time);
     # GOG and 2007 CD: also let the CD checks of the 2007 release pass (--disc-check) and add the program
     # changes of patch 1.01 (--v101, src/a2v101.S), see README
     - execute:
-        command: 'python3 "@PKG@/src/a2patch.py" --sound @FIXES@ "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
-        disable_runtime: true  # as/ld (--v101) with the system's libraries
+        command: 'python3 "@PKG@/src/a2patch.py" --fixes --interviews @FIXES@ "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
+        disable_runtime: true
 
     # Indeo videos in the game folder (GOG; 2007 CD: in its folder CD; on the 1999 CD version only if
     # the setup copied videos)
@@ -277,6 +304,23 @@ script:
         disable_runtime: true
 
 # @END
+    # Icon for Lutris, the dock and the application menu (src/a2assets.py, install.sh keeps the game's
+    # icon in build/anstoss2.ico). install.sh offers A2G-Icon only if it could fetch it; if it can't be
+    # fetched now or no usable file is picked, the game's own icon is used.
+    - input_menu:
+        description: 'Welches Icon soll das Spiel in Lutris, im Dock und im Anwendungsmenü bekommen? Das Icon des Spiels hat nur 32×32 Pixel und 16 Farben und wirkt vergrößert pixelig. A2G-Icon ist eine Neuzeichnung davon. Ein neu gezeichnetes oder eigenes Icon erscheint auch in der Mitte des Spielhintergrunds.'
+        id: ICON
+        options:
+          - game: Icon des Spiels
+# @BEGIN ICONREPO
+          - repo: Neu gezeichnetes Icon von A2G-Icon herunterladen
+# @END
+          - file: Eigene Dateien wählen (PNG und/oder SVG)
+        preselect: game
+    - execute:
+        command: 'python3 "@PKG@/src/a2assets.py" icon "$INPUT_ICON" "@PKG@/build/anstoss2.ico" "@ICONS@" "lutris_@SLUG@" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop.bmp"'
+        disable_runtime: true  # ImageMagick and zenity with the system's libraries
+
     # Optional: data set (overwrites the game's files) and save games (existing ones are kept)
     - input_menu:
         description: 'Einen Anstoss-2-Datensatz in den Spielordner importieren?'
@@ -302,7 +346,18 @@ script:
         command: 'python3 "@PKG@/src/a2import.py" --title "Anstoss-2-Spielstände" "$INPUT_SAVES" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true  # zenity does not start with Lutris' runtime libraries
 
-    # Optional: lift the goal limits (patch "Torgrenzen aufheben" from A2G-Patch, see README)
+    # Optional balancing patches from A2G-Patch, one page each (see README)
+    - input_menu:
+        description: 'Verhandlungssperre monatlich abbauen? Nach drei Verhandlungsterminen mit Spielern eines Vereins gibt dieser keine Spieler mehr ab. Das Spiel will diese Sperre jeden Monat halbieren, erwischt wegen eines Fehlers aber die falschen Bytes, sodass sie bis zur nächsten Saison hält. Der Patch lässt sie wie vorgesehen abbauen.'
+        id: NEGOTIATION
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Sperre monatlich abbauen
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_NEGOTIATION" != yes || python3 "@PKG@/src/a2patch.py" --negotiation "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
+        disable_runtime: true
+
     - input_menu:
         description: 'Torgrenzen aufheben? Ohne Patch trifft eine Mannschaft vor der Halbzeit höchstens 6-mal und danach höchstens 10-mal, ab 7 Toren halbieren sich ihre Chancen. Der Patch hebt die Grenze auf 15 an.'
         id: GOALS
@@ -312,6 +367,28 @@ script:
         preselect: 'no'
     - execute:
         command: 'test "$INPUT_GOALS" != yes || python3 "@PKG@/src/a2patch.py" --goals "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Unpassende Ansprachen bestrafen? Laut Spielhilfe kehrt sich die Wirkung einer Ansprache in der Mannschaftssitzung ins Negative um, wenn sie nicht zur Lage passt. Im Original zeigt das Spiel nur eine Meldung an. Mit dem Patch zieht eine unpassende Ansprache ihre Prozente für dieses Spiel von Abwehr und Angriff ab.'
+        id: SPEECHES
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Unpassende Ansprachen bestrafen
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_SPEECHES" != yes || python3 "@PKG@/src/a2patch.py" --speeches "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Trainer-Nachwuchs verbessern? Im Original werden die Co- und Torwarttrainer, die die Vereine einstellen können, über die Jahre immer schwächer, bis kaum noch gute übrig sind. Mit dem Patch kommen immer wieder starke Trainer nach, darunter auch ehemalige Spieler.'
+        id: COACHES
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Trainer-Nachwuchs verbessern
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_COACHES" != yes || python3 "@PKG@/src/a2patch.py" --coaches "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/@EXE@"'
         disable_runtime: true
 
     # Editor and, optionally, A2G-Trainer: entries in the application menu, started in this prefix

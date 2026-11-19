@@ -21,11 +21,17 @@
 #         out of its copy protection shell (src/a2unpack.py), mounts the folder CD there as drive D:,
 #         converts the videos and applies patch 1.01 as for GOG. Own Lutris entry (slug
 #         anstoss-2-gold-2007, folder ~/Games/anstoss-2-gold-2007).
-# 3. Builds the wide font from Wine's MS Sans Serif and puts banner, cover (from the box art on
-#    the CD) and the game's icon into Lutris (src/a2assets.py). For GOG, banner and cover come from GOG's images of the game.
-#    Lutris then optionally imports a data set and save games and lifts the goal limits.
+# 3. Builds the wide font from Wine's MS Sans Serif and puts banner and cover (from the box art on
+#    the CD) into Lutris (src/a2assets.py). For GOG, banner and cover come from GOG's images of the
+#    game. It keeps the game's icon (build/anstoss2.ico) and checks whether the icon of the repository
+#    A2G-Icon can be fetched.
+#    Lutris then asks for the icon (the game's own, A2G-Icon's if it can be fetched, or own files; the
+#    last two also become the picture in the middle of the virtual desktop), optionally imports a data
+#    set and save games, applies the bug fixes (src/a2patch.py --fixes --interviews) and the balancing
+#    patches the player picks.
 #
-# Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity.
+# Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity,
+# glib-compile-schemas; curl for downloading GE-Proton11-12.
 # Without src/gsfix.so (in the release archive, not in the git repository): gcc and the Wayland headers.
 # GOG and 2007 CD: innoextract (Lutris brings its own in ~/.local/share/lutris/runtime). Missing ones
 # are installed with apt, dnf, pacman or zypper (with sudo); a missing GE-Proton11-12 is downloaded.
@@ -87,7 +93,7 @@ while [[ $# -gt 0 ]]; do
     --cd)      CD="$2"; shift 2 ;;
     --cd-copy) CDCOPY="$2"; shift 2 ;;
     --gog)     GOG="$2"; shift 2 ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
@@ -235,7 +241,7 @@ cd_prepare() {
   SETUP="$(cd "$CDCOPY" && find . -maxdepth 1 -iname 'setup.exe' -printf '%P\n' | head -1)"
   [[ -n "$SETUP" ]] || die "No setup.exe found in the root folder of the CD"
   # Response file for the silent setup: the CD's SETUP.ISS with the target folder C:\Spiele\Anstoss 2 Gold
-  # (szPath, szDir), with CRLF line endings as tested
+  # (szPath, szDir), with CRLF line endings
   ISS="$(find "$CDCOPY" -maxdepth 1 -iname 'setup.iss' | head -1)"
   [[ -n "$ISS" ]] || die "No SETUP.ISS found in the root folder of the CD"
   sed -e 's/\r$//' -e 's/^\(sz\(Path\|Dir\)=\).*/\1C:\\Spiele\\Anstoss 2 Gold/' -e 's/$/\r/' "$ISS" > "$CDCOPY/a2setup.iss"
@@ -262,7 +268,9 @@ else
 fi
 
 # --- Banner, cover and icon for Lutris ---------------------------------------
-mkdir -p "$LUTRIS_DATA/lutris/banners" "$LUTRIS_DATA/lutris/coverart" "$LUTRIS_DATA/icons/hicolor/128x128/apps"
+# The icon is installed by the Lutris installer as the player chooses (src/a2assets.py icon); it
+# offers A2G-Icon only if it can be fetched now (block "# @BEGIN ICONREPO" of anstoss2.yml.in)
+mkdir -p "$LUTRIS_DATA/lutris/banners" "$LUTRIS_DATA/lutris/coverart"
 if [[ -n "$DVD" ]]; then
   python3 "$PKG/src/a2assets.py" media "$TMPX" "$LUTRIS_DATA/lutris/banners/$SLUG.jpg" \
       "$LUTRIS_DATA/lutris/coverart/$SLUG.jpg" || die "could not create banner and cover"
@@ -273,9 +281,10 @@ else
   python3 "$PKG/src/a2assets.py" media "$CDCOPY" "$LUTRIS_DATA/lutris/banners/$SLUG.jpg" \
       "$LUTRIS_DATA/lutris/coverart/$SLUG.jpg" || die "could not create banner and cover"
 fi
-IM="$(command -v magick || command -v convert)"  # ffmpeg would lose the icon's transparency
-"$IM" "$ICO" -filter point -resize 128x128 "PNG32:$LUTRIS_DATA/icons/hicolor/128x128/apps/lutris_$SLUG.png" \
-    || die "could not convert $ICO"
+mkdir -p "$PKG/build"
+cp "$ICO" "$PKG/build/anstoss2.ico"
+TAGS="$VARIANT"
+if python3 "$PKG/src/a2assets.py" icon-check; then TAGS+=" ICONREPO"; fi
 
 # --- Proton for Lutris ----------------------------------------------------------
 # Missing GE-Proton11-12 is downloaded from GitHub (checked against its SHA-512) to Steam's folder
@@ -309,13 +318,15 @@ python3 "$PKG/src/a2assets.py" fonts "$WINE_FONTS" "$PKG/build" || die "could no
 # --- Generate and run the Lutris installer ----------------------------------
 YML="$PKG/$SLUG.yml"
 sedq() { printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'; }  # for the right side of s|...|...|
-# Keeps the blocks "# @BEGIN <variants>" ... "# @END" that list $VARIANT, drops the others and the markers
-awk -v variant="$VARIANT" '
-  /^# @BEGIN / { skip = 1; for (i = 3; i <= NF; i++) if ($i == variant) skip = 0; next }
+# Keeps the blocks "# @BEGIN <tags>" ... "# @END" that list one of $TAGS ($VARIANT, ICONREPO), drops
+# the others and the markers
+awk -v tags="$TAGS" '
+  BEGIN { n = split(tags, t, " "); for (i = 1; i <= n; i++) want[t[i]] = 1 }
+  /^# @BEGIN / { skip = 1; for (i = 3; i <= NF; i++) if ($i in want) skip = 0; next }
   /^# @END/ { skip = 0; next }
   !skip' "$PKG/anstoss2.yml.in" |
 sed -e "s|@PKG@|$(sedq "$PKG")|g" -e "s|@CDCOPY@|$(sedq "$CDCOPY")|g" -e "s|@SETUP@|$(sedq "$SETUP")|g" \
-    -e "s|@INNOEXTRACT@|$(sedq "${INNO:-}")|g" -e "s|@SLUG@|$SLUG|g" -e "s|@NAME@|$NAME|g" \
+    -e "s|@INNOEXTRACT@|$(sedq "${INNO:-}")|g" -e "s|@ICONS@|$(sedq "$LUTRIS_DATA/icons/hicolor")|g" -e "s|@SLUG@|$SLUG|g" -e "s|@NAME@|$NAME|g" \
     -e "s|@VERSION@|$VERSION|g" -e "s|@EXE@|$EXE|g" -e "s| @FIXES@|${FIXES:+ $FIXES}|g" > "$YML"
 ! grep -n '@[A-Z]*@' "$YML" || die "$YML: placeholder left"
 chmod +x "$PKG/install.sh"

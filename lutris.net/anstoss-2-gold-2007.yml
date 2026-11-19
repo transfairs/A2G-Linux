@@ -2,7 +2,7 @@
 # Lutris installer for lutris.net: Anstoss 2 Gold of 2007 from the DVD "ANSTOSS 2007" by Kalypso
 # (Inno Setup installer ANSTOSS_2_GOLD/Setup.exe, or an ISO image of the DVD).
 # Unlike anstoss2.yml.in it needs no install.sh run before: it downloads this repository itself.
-# For the website, everything below "script:" goes into the "Script" field (see README).
+# On lutris.net, the script is everything below "script:", one indentation level less (lutris.net/content.sh).
 #
 # The URL below always loads the newest release (asset A2G-Linux.tar.gz, published by .github/workflows/release.yml for each tag v*).
 name: Anstoss 2 Gold (2007)
@@ -156,6 +156,23 @@ script:
         key: Background
         value: "41 56 74"
         type: REG_SZ
+    # On it, centred, the icon from A2G-Icon or the one picked (the question ICON below; src/a2assets.py
+    # writes a2desktop.bmp only for those, not for the game's own icon; without the file Wine shows
+    # the plain color)
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: Wallpaper
+        value: 'C:\\Spiele\\Anstoss 2 Gold\\a2desktop.bmp'
+        type: REG_SZ
+    - task:
+        name: set_regedit
+        prefix: $GAMEDIR
+        path: HKEY_CURRENT_USER\Control Panel\Desktop
+        key: TileWallpaper
+        value: "0"
+        type: REG_SZ
 
     # Bold title bar font as in Royale Noir (LOGFONTW: Tahoma, height 10, weight 700)
     - task:
@@ -175,7 +192,7 @@ script:
         value: gdi
         type: REG_SZ
 
-    # Without this, input stopped arriving after clicking another window
+    # Without this, the game stops reacting to input after another window is clicked
     - task:
         name: set_regedit
         prefix: $GAMEDIR
@@ -194,12 +211,12 @@ script:
         command: 'inno=$(ls "${XDG_DATA_HOME:-$HOME/.local/share}"/lutris/runtime/innoextract*/innoextract 2>/dev/null | head -1); inno=${inno:-$(command -v innoextract)}; test -n "$inno" || { echo "innoextract is missing, please install it with your package manager"; exit 1; }; setup=$(find "$DISC" -maxdepth 2 -ipath "*/anstoss_2_gold/setup.exe" | head -1) && test -n "$setup" && "$inno" -q -l "$setup" | grep -i "\"app/run.exe\"" >/dev/null && "$inno" -q -l "$setup" | grep -i "\"app/CD/ARCHIVES/COMMENTS.CPR\"" >/dev/null && s="$GAMEDIR/drive_c/Spiele" && mkdir -p "$s" && rm -rf "$s/a2inno" && "$inno" -s -m -d "$s/a2inno" "$setup" && mv "$s/a2inno/app" "$s/Anstoss 2 Gold" && rm -rf "$s/a2inno" && test -d "$s/Anstoss 2 Gold/CD" && python3 "$CACHE/a2g/src/a2unpack.py" "$s/Anstoss 2 Gold/run.exe" || { echo "Unpacking ANSTOSS_2_GOLD/Setup.exe from the DVD failed"; exit 1; }'
         disable_runtime: true  # a system innoextract needs the system's libraries
 
-    # Banner and cover from the box art that CD/AUTORUN.EXE shows, icon anstoss2.ico, as install.sh
-    # does: lutris.net has no icon for anstoss-2-gold-edition, and its banner and cover show other
-    # art. Lutris names these files after the game slug and downloads only missing ones, so it keeps
-    # them.
+    # Banner and cover from the box art that CD/AUTORUN.EXE shows, as install.sh does (the icon follows
+    # with the question ICON): lutris.net has no icon for anstoss-2-gold-edition, and its banner and
+    # cover show other art. Lutris names these files after the game slug and downloads only missing
+    # ones, so it keeps them.
     - execute:
-        command: 'd="${XDG_DATA_HOME:-$HOME/.local/share}" && g="$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && python3 "$CACHE/a2g/src/a2assets.py" media "$g/CD" "$d/lutris/banners/anstoss-2-gold-edition.jpg" "$d/lutris/coverart/anstoss-2-gold-edition.jpg" && ico=$(find "$g" -maxdepth 1 -iname anstoss2.ico | head -1) && test -n "$ico" && mkdir -p "$d/icons/hicolor/128x128/apps" && im=$(command -v magick || command -v convert) && "$im" "$ico" -filter point -resize 128x128 "PNG32:$d/icons/hicolor/128x128/apps/lutris_anstoss-2-gold-edition.png" || { echo "Banner, cover or icon could not be created"; exit 1; }'
+        command: 'd="${XDG_DATA_HOME:-$HOME/.local/share}" && g="$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && python3 "$CACHE/a2g/src/a2assets.py" media "$g/CD" "$d/lutris/banners/anstoss-2-gold-edition.jpg" "$d/lutris/coverart/anstoss-2-gold-edition.jpg" || { echo "Banner and cover could not be created"; exit 1; }'
         disable_runtime: true  # ImageMagick with the system's libraries
 
     # The folder CD as CD-ROM drive D:, as Kalypso's compatibility.dll fakes it. If the DVD or ISO
@@ -242,12 +259,21 @@ script:
     - execute:
         command: 'cp "$CACHE/a2g/src/a2start.exe" "$CACHE"/a2g/build/a2wide2?.fnt "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/"'
 
-    # Sound on the default audio device instead of the last one found (patch from A2G-Patch); let the
-    # CD checks pass (--disc-check; a copy of the CD gives another signature) and add the program changes of patch 1.01
+    # Bug fixes from A2G-Patch (--fixes, see README): sound on the default audio device, arrow buttons that
+    # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space
+    # warning, squads limited to 30 players, investment growth kept off the bank balance, the club's money
+    # stopping at 2 billion DM instead of running over, random events that do what their message says,
+    # no crash on events without a fitting player, trainers and managers in weak countries improving
+    # yearly, appearances without a mark kept out of the average, a list of the most appearances that
+    # takes new players after 50; and, although A2G-Patch counts them as balancing, fish poisoning that
+    # keeps a player out for the three weeks its message says, all events around the manager's private
+    # life (--fish, --manager) and interview answers that take effect
+    # (--interviews, a balancing patch in A2G-Patch, applied every time); let the CD checks pass
+    # (--disc-check; a copy of the CD gives another signature) and add the program changes of patch 1.01
     # (--v101, src/a2v101.S), see README
     - execute:
-        command: 'python3 "$CACHE/a2g/src/a2patch.py" --sound --disc-check --v101 "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
-        disable_runtime: true  # as/ld (--v101) with the system's libraries
+        command: 'python3 "$CACHE/a2g/src/a2patch.py" --fixes --interviews --disc-check --v101 "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
+        disable_runtime: true
 
     # Indeo videos in the game folder (the 5 in CD/VIDEOS)
     - execute:
@@ -258,6 +284,20 @@ script:
     - execute:
         command: 'python3 "$CACHE/a2g/src/a2data101.py" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true
+
+    # Icon for Lutris, the dock and the application menu (src/a2assets.py). If A2G-Icon can't be
+    # fetched or no usable file is picked, the game's own icon is used.
+    - input_menu:
+        description: 'Welches Icon soll das Spiel in Lutris, im Dock und im Anwendungsmenü bekommen? Das Icon des Spiels hat nur 32×32 Pixel und 16 Farben und wirkt vergrößert pixelig. A2G-Icon ist eine Neuzeichnung davon. Ein neu gezeichnetes oder eigenes Icon erscheint auch in der Mitte des Spielhintergrunds.'
+        id: ICON
+        options:
+          - game: Icon des Spiels
+          - repo: Neu gezeichnetes Icon von A2G-Icon herunterladen
+          - file: Eigene Dateien wählen (PNG und/oder SVG)
+        preselect: game
+    - execute:
+        command: 'ico=$(find "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" -maxdepth 1 -iname anstoss2.ico | head -1) && test -n "$ico" && d="${XDG_DATA_HOME:-$HOME/.local/share}" && python3 "$CACHE/a2g/src/a2assets.py" icon "$INPUT_ICON" "$ico" "$d/icons/hicolor" lutris_anstoss-2-gold-edition "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop.bmp" || { echo "The icon could not be installed"; exit 1; }'
+        disable_runtime: true  # ImageMagick and zenity with the system's libraries
 
     # Optional: data set (overwrites the game's files) and save games (existing ones are kept)
     - input_menu:
@@ -284,7 +324,18 @@ script:
         command: 'python3 "$CACHE/a2g/src/a2import.py" --title "Anstoss-2-Spielstände" "$INPUT_SAVES" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true  # zenity does not start with Lutris' runtime libraries
 
-    # Optional: lift the goal limits (patch "Torgrenzen aufheben" from A2G-Patch, see README)
+    # Optional balancing patches from A2G-Patch, one page each (see README)
+    - input_menu:
+        description: 'Verhandlungssperre monatlich abbauen? Nach drei Verhandlungsterminen mit Spielern eines Vereins gibt dieser keine Spieler mehr ab. Das Spiel will diese Sperre jeden Monat halbieren, erwischt wegen eines Fehlers aber die falschen Bytes, sodass sie bis zur nächsten Saison hält. Der Patch lässt sie wie vorgesehen abbauen.'
+        id: NEGOTIATION
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Sperre monatlich abbauen
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_NEGOTIATION" != yes || python3 "$CACHE/a2g/src/a2patch.py" --negotiation "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
+        disable_runtime: true
+
     - input_menu:
         description: 'Torgrenzen aufheben? Ohne Patch trifft eine Mannschaft vor der Halbzeit höchstens 6-mal und danach höchstens 10-mal, ab 7 Toren halbieren sich ihre Chancen. Der Patch hebt die Grenze auf 15 an.'
         id: GOALS
@@ -294,6 +345,28 @@ script:
         preselect: 'no'
     - execute:
         command: 'test "$INPUT_GOALS" != yes || python3 "$CACHE/a2g/src/a2patch.py" --goals "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Unpassende Ansprachen bestrafen? Laut Spielhilfe kehrt sich die Wirkung einer Ansprache in der Mannschaftssitzung ins Negative um, wenn sie nicht zur Lage passt. Im Original zeigt das Spiel nur eine Meldung an. Mit dem Patch zieht eine unpassende Ansprache ihre Prozente für dieses Spiel von Abwehr und Angriff ab.'
+        id: SPEECHES
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Unpassende Ansprachen bestrafen
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_SPEECHES" != yes || python3 "$CACHE/a2g/src/a2patch.py" --speeches "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Trainer-Nachwuchs verbessern? Im Original werden die Co- und Torwarttrainer, die die Vereine einstellen können, über die Jahre immer schwächer, bis kaum noch gute übrig sind. Mit dem Patch kommen immer wieder starke Trainer nach, darunter auch ehemalige Spieler.'
+        id: COACHES
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Trainer-Nachwuchs verbessern
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_COACHES" != yes || python3 "$CACHE/a2g/src/a2patch.py" --coaches "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
         disable_runtime: true
 
     # Editor and, optionally, A2G-Trainer: entries in the application menu, started in this prefix

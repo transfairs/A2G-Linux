@@ -95,8 +95,8 @@ static void patch_indeo(HANDLE proc, const struct version *v) {
     else logf_("Indeo patch: write failed", (long)GetLastError());
 }
 
-/* Fonts: FUN_00573740 creates the menu fonts with CreateFontA(height, width, ..., "MS SANS SERIF"),
-   the list and table windows (FUN_005e8xxx, FUN_0060bxxx, FUN_00616xxx) create their own 10 px font.
+/* Fonts: the function at 0x573740 creates the menu fonts with CreateFontA(height, width, ..., "MS SANS SERIF"),
+   the list and table windows (0x5e8xxx, 0x60bxxx, 0x616xxx) create their own 10 px font.
    MS Sans Serif is a bitmap font. Wine stretches it continuously to the requested width
    (headings about a third wider, text gets cut off). The width is therefore set to 0
    (natural width). The patched byte is the operand of "push <width>" before each call. */
@@ -127,7 +127,7 @@ static void patch_fonts(HANDLE proc, const struct version *v) {
     logf_("Font patch: locations changed", ok);
 }
 
-/* Mascot in dialogs: FUN_0040a3d0 (animation in a STATIC control) builds the frames at full bitmap
+/* Mascot in dialogs: the function at 0x40a3d0 (animation in a STATIC control) builds the frames at full bitmap
    size and draws them into the control. The control is often smaller than the image. Windows still
    shows the overhang because the STATIC class has CS_PARENTDC. Wine clips to the control, and the
    mascot loses its legs. Fix: right after the image size is determined, the control is enlarged
@@ -181,7 +181,7 @@ static void patch_anim(HANDLE proc, const struct version *v) {
     logf_("Mascot patch: applied", 1);
 }
 
-/* Crests and flags: FUN_00467470 calls DrawDibDraw with a destination rectangle (x, y, 32, 32); the
+/* Crests and flags: the function at 0x467470 calls DrawDibDraw with a destination rectangle (x, y, 32, 32); the
    destination width/height is computed from it as 32-x and 32-y and is therefore negative. Windows
    treats a negative destination size like -1 ("use the image size"), Wine only exactly -1, and
    otherwise draws mirrored and stretched (a huge upside-down flag). Fix: the DrawDibDraw calls
@@ -221,7 +221,7 @@ static void patch_drawdib(HANDLE proc, const struct version *v) {
     logf_("DrawDib patch: applied", 2);
 }
 
-/* Videos with an 8-bit palette (e.g. "Tor des Monats", goal of the month): FUN_00418cd0 calls
+/* Videos with an 8-bit palette (e.g. "Tor des Monats", goal of the month): the function at 0x418cd0 calls
    AVIStreamGetFrameOpen with a requested "8 bit" format followed by an empty palette. Windows then uses
    the video's palette, Wine takes the empty one and every color turns black. With NULL ("the video's
    format") Wine returns the same format (8 bit, 256 colors) with the correct palette. To do so,
@@ -243,7 +243,7 @@ static void patch_avipal(HANDLE proc, const struct version *v) {
    the characters horizontally here. Wine only widens the gaps. Fix: the font "A2 Sans Serif Wide"
    (a2wide20.fnt/a2wide24.fnt, generated from the original by mkwide.py) already contains
    double-width characters. Wine does not load bitmap fonts from C:\windows\Fonts, so the game loads
-   them itself with AddFontResourceA: at the start of FUN_00573740 (creates all menu fonts) it jumps
+   them itself with AddFontResourceA: at the start of the function at 0x573740 (creates all menu fonts) it jumps
    into injected code that loads both files. The three affected CreateFontA calls get the new face
    name; patch_fonts has already set their width to 0 (natural). */
 static void patch_widefont(HANDLE proc, const struct version *v, const char *dir) {
@@ -330,7 +330,7 @@ static void patch_widefont(HANDLE proc, const struct version *v, const char *dir
     logf_("Wide font patch: applied", faces);
 }
 
-/* Cup draw (club names on the sign in the video, ARCHIVES/MoveList.dat): FUN_00419e10 draws the names
+/* Cup draw (club names on the sign in the video, ARCHIVES/MoveList.dat): the function at 0x419e10 draws the names
    with GDI into a CreateCompatibleBitmap(screen, 128, 32) and reads it with GetBitmapBits(bitmap,
    0x2000, [esi+0xc]), expecting 16 bit per pixel (256 bytes per row). Under Wine the bitmap has 32 bit
    per pixel even in the 16-bit mode, so the game gets the upper half of the picture with each pixel
@@ -406,10 +406,10 @@ static void patch_bitmapbits(HANDLE proc, const struct version *v) {
     logf_("Cup draw patch: applied", 1);
 }
 
-/* Preseason calculation ("ANSTOSS2 - Kalkulation"): the constructor of its dialog (FUN_004a4d80)
+/* Preseason calculation ("ANSTOSS2 - Kalkulation"): the constructor of its dialog (0x4a4d80)
    sets the selection of "Ermittlung der Zahlen" (word [dlg+0x10d48]) to 0 but leaves that of
    "Darstellung" (word [dlg+0x10d46]) as it comes from the heap. OnInitDialog selects that entry in
-   the 4-entry list, and its paint code (FUN_005bf1f0) copies the entry's name without checking the
+   the 4-entry list, and its paint code (0x5bf1f0) copies the entry's name without checking the
    upper bound. On Windows the fresh heap memory is 0 ("Reine Kalkulation"); under Wine it may hold
    anything, depending on what was freed before (e.g. without Italy as a bonus country). A large value
    makes the copy read outside the dialog: the access violation inside WM_INITDIALOG is swallowed by
@@ -430,11 +430,11 @@ static void patch_calcinit(HANDLE proc, const struct version *v) {
 }
 
 /* Picture buttons (e.g. "A/B" and "i" in the team lineup before a match): the constructor of the
-   button class (FUN_005bc3a0) leaves the BITMAP fields [btn+0x7c..0x93] as they come from the heap;
+   button class (0x5bc3a0) leaves the BITMAP fields [btn+0x7c..0x93] as they come from the heap;
    width and height ([btn+0x80], [btn+0x84]) are only filled by GetObjectA when a picture is loaded.
-   The lineup moves "A/B" and "i" to their template position (FUN_005bcc10, MoveWindow with these
+   The lineup moves "A/B" and "i" to their template position (0x5bcc10, MoveWindow with these
    width and height) before loading their pictures, which then align them to the bottom right corner
-   of that window (FUN_005bcca0). On Windows the fresh memory is 0: the window has size 0, and the
+   of that window (0x5bcca0). On Windows the fresh memory is 0: the window has size 0, and the
    alignment puts the button exactly where the template has it. Under Wine the memory may hold old
    pixel data: the window gets a huge size, Wine limits its corner to 32767, and the button ends up
    outside the screen until the lineup is opened again. Fix: the constructor's last two instructions
