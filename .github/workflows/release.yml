@@ -6,6 +6,10 @@ name: Release
 # "latest" URL). The archive also holds src/gsfix.so, built here, so the lutris.net scripts need
 # neither gcc nor the Wayland headers. Built in an Ubuntu 22.04 container, so it runs with any
 # glibc from 2.34 on (dlsym), not only with the newest one of the runner.
+#
+# Before anything is published, the tests workflow runs for the tagged commit (all of tox), and the tag
+# must lie on main. The release notes list the commit subjects since the previous tag
+# (.github/release-notes.sh); .github/pre-release.sh shows them beforehand.
 on:
   push:
     tags:
@@ -15,12 +19,24 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   release:
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # all tags and commits, for the release notes
+
+      - name: Tag on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_REF_NAME is not on main"; exit 1; }
+
+      - name: Release notes
+        run: .github/release-notes.sh "$GITHUB_REF_NAME" > notes.md && cat notes.md
 
       - name: Build gsfix.so
         run: .github/build-gsfix.sh
@@ -32,7 +48,7 @@ jobs:
           cp src/gsfix.so out/A2G-Linux/src/
           tar -czf A2G-Linux.tar.gz -C out A2G-Linux
 
-      # A release made by hand for this tag only gets the archive (replacing an older one)
+      # A release made by hand for this tag only gets the archive (replacing an older one), its notes stay
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -40,5 +56,5 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" A2G-Linux.tar.gz --clobber
           else
-            gh release create "$GITHUB_REF_NAME" A2G-Linux.tar.gz --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+            gh release create "$GITHUB_REF_NAME" A2G-Linux.tar.gz --verify-tag --notes-file notes.md --title "$GITHUB_REF_NAME"
           fi

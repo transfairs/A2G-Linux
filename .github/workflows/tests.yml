@@ -1,13 +1,15 @@
 name: Tests
 
 # Runs tox (tests, lint, bandit, coverage, build of the helper programs) on every push and pull
-# request. The tests use synthetic data only; no files of the game are needed.
+# request, and for every release tag before the release workflow publishes. The tests use synthetic
+# data only; no files of the game are needed.
 on:
   push:
     branches:
       - "**"
   pull_request:
   workflow_dispatch:
+  workflow_call:  # by the release workflow, before it publishes
 
 permissions:
   contents: read
