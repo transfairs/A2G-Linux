@@ -271,11 +271,13 @@ script:
     # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space
     # warning, squads limited to 30 players, investment growth kept off the bank balance, the club's money
     # stopping at 2 billion DM instead of running over, random events that do what their message says,
-    # no crash on events without a fitting player, trainers and managers in weak countries improving
-    # yearly, appearances without a mark kept out of the average, a list of the most appearances that
+    # no crash on events without a fitting player, referees with a grudge hitting the right club,
+    # trainers and managers in weak countries improving yearly, appearances without a mark kept out of
+    # the average, the grade chart labelled "Noten/6", a list of the most appearances that
     # takes new players after 50; and, although A2G-Patch counts them as balancing, fish poisoning that
     # keeps a player out for the three weeks its message says, all events around the manager's private
-    # life (--fish, --manager) and interview answers that take effect
+    # life (--fish, --manager), the lawn care button without a bar under Wine (--lawn, a fix of A2G-Linux)
+    # and interview answers that take effect
     # (--interviews, a balancing patch in A2G-Patch, applied every time);
     # GOG and 2007 CD: also let the CD checks of the 2007 release pass (--disc-check) and add the program
     # changes of patch 1.01 (--v101, src/a2v101.S), see README

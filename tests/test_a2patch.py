@@ -100,6 +100,91 @@ def pe_image(hooks=True, stubs=0):
     return image
 
 
+DATA_RAW = 0x400  # where pe_file puts its data, loaded at 0x401000
+
+
+def pe_file(data, imports=0):
+    """A minimal PE file with data as its one section; imports is the import directory's RVA."""
+    size = (len(data) + 0x1FF) // 0x200 * 0x200
+    image = bytearray(DATA_RAW + size)
+    image[:2] = b"MZ"
+    pe, optsize = 0x80, 0xE0
+    struct.pack_into("<I", image, 0x3C, pe)
+    image[pe : pe + 4] = b"PE\0\0"
+    struct.pack_into("<H", image, pe + 6, 1)
+    struct.pack_into("<H", image, pe + 20, optsize)
+    struct.pack_into("<III", image, pe + 24 + 28, 0x400000, 0x1000, 0x200)
+    struct.pack_into("<I", image, pe + 24 + 56, 0x1000 + size)
+    struct.pack_into("<I", image, pe + 24 + 104, imports)
+    struct.pack_into("<8sIIII", image, pe + 24 + optsize, b".text\0\0\0", len(data), 0x1000, size, DATA_RAW)
+    image[DATA_RAW : DATA_RAW + len(data)] = data
+    return bytes(image)
+
+
+# --- lawn care button: "%s\t%s" -> "%s\n%s" ------------------------------------------------------
+
+LAWN_STRINGS = filler(8) + p.LAWN_TAB + filler(8) + p.LAWN_NEWLINE + filler(8)
+LAWN_TAB_VA = 0x401000 + 8 + 1
+LAWN_NEWLINE_VA = 0x401000 + 8 + len(p.LAWN_TAB) + 8 + 1
+
+
+def lawn_places(*patched, value=None):
+    """The two places of --lawn, each pushing "%s\\n%s" if patched, else "%s\\t%s" (or value)."""
+    places = []
+    for pattern, at, done in zip(p.LAWN_PLACES, p.LAWN_FORMAT_AT, patched):
+        code = bytearray(concrete(pattern))
+        address = value if value is not None else LAWN_NEWLINE_VA if done else LAWN_TAB_VA
+        struct.pack_into("<I", code, at, address)
+        places.append(bytes(code))
+    return places
+
+
+def lawn_image(*patched, value=None, strings=LAWN_STRINGS):
+    return pe_file(strings + filler(8).join(lawn_places(*patched, value=value)))
+
+
+def test_lawn_format_at_is_the_push():
+    for pattern, at in zip(p.LAWN_PLACES, p.LAWN_FORMAT_AT):
+        assert pattern[at - 1] == 0x68 and pattern[at : at + 4] == [None] * 4
+
+
+@pytest.mark.parametrize("patched", [(False, False), (True, False), (True, True)])
+def test_lawn_sites_find_both_pushes(patched):
+    image = lawn_image(*patched)
+    sites = p.lawn_sites(image)
+    old, new = struct.pack("<I", LAWN_TAB_VA), struct.pack("<I", LAWN_NEWLINE_VA)
+    assert [(s[1], s[2], s[3]) for s in sites] == [(old, new, done) for done in patched]
+    for at, _, _, done in sites:
+        assert image[at : at + 4] == (new if done else old)
+    assert apply_sites(image, sites) == lawn_image(True, True)
+
+
+def test_lawn_sites_need_a_known_exe():
+    assert p.lawn_sites(lawn_image(False, False)[2:]) is None  # no PE file
+    assert p.lawn_sites(lawn_image(False, False, value=0x401234)) is None  # another format string
+    assert p.lawn_sites(lawn_image(False, False, strings=filler(8) + p.LAWN_TAB)) is None  # no "%s\n%s"
+    assert p.lawn_sites(lawn_image(False, False, strings=LAWN_STRINGS + p.LAWN_TAB)) is None  # two "%s\t%s"
+    one = pe_file(LAWN_STRINGS + lawn_places(False, False)[0])
+    assert p.lawn_sites(one) is None
+    twice = pe_file(LAWN_STRINGS + filler(8).join(lawn_places(False, False) * 2))
+    assert p.lawn_sites(twice) is None
+
+
+def test_lawn_sites_need_the_strings_in_a_section():
+    image = bytearray(lawn_image(False, False))
+    pe = p.Pe(bytes(image))
+    struct.pack_into("<I", image, pe.table + 16, 8)  # the section's file data ends before the strings
+    assert p.lawn_sites(bytes(image)) is None
+
+
+def test_main_lawn(tmp_path, monkeypatch, capsys):
+    exe = tmp_path / "anstoss2.exe"
+    exe.write_bytes(lawn_image(False, False))
+    run_main(monkeypatch, "--lawn", exe)
+    assert exe.read_bytes() == lawn_image(True, True)
+    assert "lawn care button without a bar under Wine: patched" in capsys.readouterr().out
+
+
 # --- find_all / after ------------------------------------------------------------------------
 
 
@@ -521,10 +606,31 @@ def test_squad_sites():
     assert p.squad_sites(SQUAD_ORIGINAL + SQUAD_PATCHED) is None
 
 
-NEW_FIXES = ("events", "crashes", "competence", "grades", "appearances", "fish", "manager")
+NEW_FIXES = ("events", "crashes", "referee", "competence", "grades", "appearances", "fish")
 
 
 def fixes_image(patched=False):
+    """Every place of --fixes in one PE file, behind the two format strings of --lawn; the manager events at
+    the end, for MANAGER_TEST_CODE."""
+    image, _ = manager_image(prefix=fixes_prefix(patched))
+    if patched:
+        image = apply_sites(image, p.manager_sites(image, fixes_code()))
+    return image
+
+
+def fixes_prefix(patched):
+    """What fixes_image holds in front of the manager events (as long patched as not)."""
+    data = LAWN_STRINGS + filler(8).join(fixes_parts(patched) + lawn_places(patched, patched)) + filler(8)
+    return data + grade_chart_block(patched) + filler(8)
+
+
+def fixes_code():
+    """The manager events' code with the build of fixes_image."""
+    _, build = manager_image(prefix=fixes_prefix(False))
+    return {**MANAGER_CODE, "builds": {"test": build}}
+
+
+def fixes_parts(patched):
     if patched:
         parts = [sound_block(patched=True), ARROW_CHECK + ARROW_PATCHED, VIDEO_PREFIX + video_patched_bytes()]
         parts += [FREEZE[:17] + b"\x73" + FREEZE[18:]] * 2 + [DISK[:10] + b"\xeb" + DISK[11:], SQUAD_PATCHED]
@@ -542,10 +648,11 @@ def fixes_image(patched=False):
             invest_original_bytes(),
             money_block(),
         ] + [places_image(k) for k in NEW_FIXES]
-    return filler(8).join(parts)
+    return parts
 
 
 def test_main_fixes(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(p, "load_manager_code", fixes_code)
     exe = tmp_path / "anstoss2.exe"
     exe.write_bytes(fixes_image())
     run_main(monkeypatch, "--fixes", exe)
@@ -558,6 +665,7 @@ def test_main_fixes(tmp_path, monkeypatch, capsys):
 
 
 def test_main_fixes_needs_every_place(tmp_path, monkeypatch):
+    monkeypatch.setattr(p, "load_manager_code", fixes_code)
     exe = tmp_path / "anstoss2.exe"
     exe.write_bytes(fixes_image().replace(DISK, filler(len(DISK))))
     with pytest.raises(SystemExit, match="unknown version"):
@@ -1064,7 +1172,7 @@ NEW_PLACES = {
     "competence": ((p.COMPETENCE_ORIGINAL, p.COMPETENCE_PATCHED),),
     "appearances": p.APPEARANCES_PLACES,
     "fish": ((p.FISH_ORIGINAL, p.FISH_PATCHED),),
-    "manager": p.MANAGER_PLACES,
+    "referee": ((p.REFEREE_ORIGINAL, p.REFEREE_PATCHED),),
 }
 
 
@@ -1103,9 +1211,11 @@ def test_new_patches_need_every_place(key):
 def test_new_patches_keep_their_call_targets():
     """Where a place moves a call (events 343, crashes, manager events), it still reaches the same target."""
     moved = 0
-    for key, places in NEW_PLACES.items():
-        image = places_image(key)
-        for (original, patched), (at, old, new, _) in zip(places, p.PATCHES[key][1](image)):
+    image, _ = manager_image()
+    found = {key: (places, p.PATCHES[key][1](places_image(key))) for key, places in NEW_PLACES.items()}
+    found["manager"] = (p.MANAGER_PLACES, p.manager_sites(image, MANAGER_TEST_CODE))
+    for places, sites in found.values():
+        for (original, patched), (at, old, new, _) in zip(places, sites):
             for k, (i, j) in enumerate(zip(p.holes(original), p.holes(patched))):
                 if p.is_displacement(original, p.holes(original), k) and p.is_displacement(
                     patched, p.holes(patched), k
@@ -1113,3 +1223,199 @@ def test_new_patches_keep_their_call_targets():
                     assert i + struct.unpack_from("<i", old, i)[0] == j + struct.unpack_from("<i", new, j)[0]
                     moved += i != j
     assert moved
+
+
+# --- grade chart: "Noten/6" from the exe -----------------------------------------------------------------
+
+GRADE_CHART_LOADER_AT = len(p.GRADE_CHART_ORIGINAL) + 8  # the loader behind the function and 8 bytes
+GRADE_CHART_ASSIGN_AT = GRADE_CHART_LOADER_AT + len(p.GRADE_CHART_LOADER) + 4  # CString::operator=
+
+
+def grade_chart_block(patched=False, text_call=GRADE_CHART_LOADER_AT, next_call=GRADE_CHART_LOADER_AT):
+    """The label's function, 8 bytes, the text loader and the assignment; the label patched or not."""
+    chart = bytearray(concrete(p.GRADE_CHART_PATCHED if patched else p.GRADE_CHART_ORIGINAL))
+    if patched:
+        put_call(chart, p.GRADE_CHART_ASSIGN_CALL, GRADE_CHART_ASSIGN_AT)
+    else:
+        put_call(chart, p.GRADE_CHART_TEXT_CALL, text_call)
+    put_call(chart, p.GRADE_CHART_NEXT_TEXT_CALL, next_call)
+    loader = bytearray(concrete(p.GRADE_CHART_LOADER))
+    put_call(loader, p.GRADE_CHART_LOADER_ASSIGN_CALL, GRADE_CHART_ASSIGN_AT - GRADE_CHART_LOADER_AT)
+    return bytes(chart) + filler(8) + bytes(loader) + filler(4) + b"\xc2\x04\x00"
+
+
+def test_grade_chart_patterns():
+    assert len(p.GRADE_CHART_ORIGINAL) == len(p.GRADE_CHART_PATCHED)
+    assert bytes(p.GRADE_CHART_PATCHED[-9:]) == b"Noten/6\0\x90"
+    # call $+5 pushes the address behind it, 0x5C in front of the string
+    assert p.GRADE_CHART_PATCHED[5:9] == [0x83, 0x04, 0x24, 0x5C]
+    assert 5 + 0x5C == len(p.GRADE_CHART_PATCHED) - 9
+
+
+def test_grade_chart_sites():
+    original = grade_chart_block()
+    sites = p.grade_chart_sites(original)
+    assert [(s[0], s[3]) for s in sites] == [(0, False)]
+    patched = apply_sites(original, sites)
+    assert patched == grade_chart_block(patched=True)
+    again = p.grade_chart_sites(patched)
+    assert again == [(0, sites[0][1], sites[0][2], True)]
+    assert apply_sites(patched, [(at, None, old, None) for at, old, _, _ in again]) == original
+
+
+def test_grade_chart_sites_unknown():
+    assert p.grade_chart_sites(filler(64)) is None
+    assert p.grade_chart_sites(grade_chart_block() * 2) is None
+    assert p.grade_chart_sites(grade_chart_block(next_call=-0x100000)) is None  # the loader in front of the file
+    assert p.grade_chart_sites(grade_chart_block(next_call=GRADE_CHART_LOADER_AT + 1)) is None  # no loader there
+    assert p.grade_chart_sites(grade_chart_block(text_call=GRADE_CHART_ASSIGN_AT)) is None  # the label another text
+
+
+def test_main_grade_chart(tmp_path, monkeypatch, capsys):
+    exe = tmp_path / "anstoss2.exe"
+    exe.write_bytes(grade_chart_block())
+    run_main(monkeypatch, "--grade-chart", exe)
+    assert exe.read_bytes() == grade_chart_block(patched=True)
+    assert "grade chart labelled Noten/6: patched" in capsys.readouterr().out
+
+
+# --- manager events: the cases' code in three functions of the game ----------------------------------------
+
+MANAGER_CODE = p.load_manager_code()
+MANAGER_SIZES = [len(o) // 2 for o in MANAGER_CODE["builds"]["1999"]["originals"]]
+MANAGER_KEYSTATE = b"GetAsyncKeyState"
+
+
+def manager_image(prefix=b"", weights=p.MANAGER_WEIGHTS, keystate=MANAGER_KEYSTATE, imports=True):
+    """(PE file, build) with prefix, then the two places, the switch, its jump table, the weights, the three
+    functions and an import directory with an entry by ordinal and one for keystate. The build is that of
+    MANAGER_TEST_CODE."""
+    data = bytearray(prefix)
+
+    def put(block):
+        at = len(data)
+        data.extend(block)
+        data.extend(filler(8))
+        return at
+
+    va = lambda at: 0x401000 + at  # noqa: E731
+    for original, _ in p.MANAGER_PLACES:
+        put(concrete(original))
+    switch = put(bytes(len(p.MANAGER_SWITCH)))
+    table = put(bytes(4 * 39))
+    data[switch : switch + len(p.MANAGER_SWITCH)] = concrete(p.MANAGER_SWITCH)
+    struct.pack_into("<I", data, switch + p.MANAGER_TABLE_AT, va(table))
+    for case in range(39):
+        struct.pack_into("<I", data, table + 4 * case, va(switch) + 0x100 + case)
+    put(weights)
+    originals = [bytes([0x90 + r]) * n for r, n in enumerate(MANAGER_SIZES)]
+    regions = [put(o) for o in originals]
+    name = put(b"\0\0" + keystate + b"\0")
+    lookup = put(struct.pack("<III", 0x80000001, va(name) - 0x400000, 0))
+    iat = put(bytes(12))
+    descriptors = put(struct.pack("<IIIII", va(lookup) - 0x400000, 0, 0, va(name) - 0x400000, va(iat) - 0x400000))
+    data[descriptors + 20 : descriptors + 28] = bytes(8)  # the empty descriptor ends the list
+    build = {
+        "switch": va(switch),
+        "table": va(table),
+        "questions": 0x6BD610,
+        "keystate": va(iat) + 4,
+        "cases": [va(switch) + 0x100 + case - 1 for case in MANAGER_CODE["cases"]],
+        "regions": [va(r) for r in regions],
+        "originals": [o.hex() for o in originals],
+        "symbols": [0x500000 + 0x10 * i for i in range(len(MANAGER_CODE["symbols"]) - 3)],
+    }
+    return pe_file(bytes(data), va(descriptors) - 0x400000 if imports else 0), build
+
+
+_, MANAGER_TEST_BUILD = manager_image()
+MANAGER_TEST_CODE = {**MANAGER_CODE, "builds": {"test": MANAGER_TEST_BUILD}}
+
+
+def test_manager_code_fits_every_build():
+    """Each block lies inside its function in every build, the questions behind MAIN, a whole number of
+    question entries from the question table."""
+    blocks = [bytes.fromhex(b) for b in MANAGER_CODE["blocks"]]
+    assert [len(b) for b in blocks][1] == 3 * p.MANAGER_QUESTION_SIZE
+    for build in MANAGER_CODE["builds"].values():
+        regions, entries = p.manager_link(MANAGER_CODE, build)
+        assert [len(r) for r in regions] == [len(o) // 2 for o in build["originals"]]
+        main = regions[0][: len(blocks[0])]
+        assert main != blocks[0] and len(main) == len(blocks[0])  # the fields are filled in
+        questions = regions[0].index(blocks[1][:4], len(blocks[0]))
+        assert (build["regions"][0] + questions - build["questions"]) % p.MANAGER_QUESTION_SIZE == 0
+        for entry in entries:
+            assert any(r <= entry < r + len(o) // 2 for r, o in zip(build["regions"], build["originals"]))
+
+
+def test_manager_link_fills_in_the_fields():
+    code = {
+        "blocks": ["00000000", "", "00000000e800000000", "cc"],
+        "fields": [[[0, 0, 4, 8]], [], [[0, 0, 1, 0], [5, 1, 5, 0]], []],
+        "entries": [[2, 4]],
+    }
+    build = {"regions": [0x1000, 0x2000, 0x3000], "originals": ["90" * 8, "90" * 12, "90"], "questions": 0x1032,
+             "symbols": [0x7000, 0x7100]}  # fmt: skip
+    regions, entries = p.manager_link(code, build)
+    questions = 0x1004 + (0x1032 - 0x1004) % p.MANAGER_QUESTION_SIZE
+    assert regions[0] == struct.pack("<I", 0x7008) + b"\xcc" * 4
+    assert regions[1] == struct.pack("<I", questions) + b"\xe8" + struct.pack("<i", 0x7100 - 0x2009) + b"\xcc" * 3
+    assert regions[2] == b"\xcc"
+    assert entries == [0x2004]
+
+
+def test_manager_sites_apply_and_take_back():
+    image, build = manager_image()
+    sites = p.manager_sites(image, MANAGER_TEST_CODE)
+    assert len(sites) == 2 + 6 + 3 and not any(s[3] for s in sites)
+    patched = apply_sites(image, sites)
+    again = p.manager_sites(patched, MANAGER_TEST_CODE)
+    assert all(s[3] for s in again) and [s[:3] for s in again] == [s[:3] for s in sites]
+    assert apply_sites(patched, [(at, None, old, None) for at, old, _, _ in again]) == image
+    regions, entries = p.manager_link(MANAGER_TEST_CODE, build)
+    pe = p.Pe(patched)
+    for case, entry in zip(MANAGER_CODE["cases"], entries):
+        assert struct.unpack_from("<I", patched, pe.file_offset(build["table"] + 4 * (case - 1)))[0] == entry
+    for va, region in zip(build["regions"], regions):
+        assert patched[pe.file_offset(va) : pe.file_offset(va) + len(region)] == region
+
+
+def test_manager_sites_put_case_34s_weight_back():
+    image, _ = manager_image(weights=p.MANAGER_OLD_WEIGHTS)
+    sites = p.manager_sites(image, MANAGER_TEST_CODE)
+    weights = image.index(p.MANAGER_OLD_WEIGHTS)
+    assert sites[-1] == (weights, p.MANAGER_OLD_WEIGHTS, p.MANAGER_WEIGHTS, False)
+    patched = apply_sites(image, sites)
+    assert patched == apply_sites(manager_image()[0], p.manager_sites(manager_image()[0], MANAGER_TEST_CODE))
+    assert all(s[3] for s in p.manager_sites(patched, MANAGER_TEST_CODE))
+
+
+def test_manager_sites_need_a_known_build():
+    image, build = manager_image()
+    assert p.manager_sites(image[2:], MANAGER_TEST_CODE) is None  # no PE file
+    no_place = image.replace(concrete(p.MANAGER_PLACES[1][0]), filler(len(p.MANAGER_PLACES[1][0])))
+    assert p.manager_sites(no_place, MANAGER_TEST_CODE) is None
+    switch = concrete(p.MANAGER_SWITCH)[: p.MANAGER_TABLE_AT]
+    assert p.manager_sites(image + switch + filler(8), MANAGER_TEST_CODE) is None  # two switches
+    assert p.manager_sites(image, p.load_manager_code()) is None  # not one of the game's builds
+    for other in (manager_image(keystate=b"GetKeyState")[0], manager_image(imports=False)[0]):
+        assert p.manager_sites(other, MANAGER_TEST_CODE) is None  # the build of another release
+    changed = bytearray(image)
+    changed[p.Pe(image).file_offset(build["regions"][2]) + 7] ^= 1  # a function neither original nor patched
+    assert p.manager_sites(bytes(changed), MANAGER_TEST_CODE) is None
+    outside = {**build, "table": 0x300000}  # the table outside the file
+    assert p.manager_sites(image, {**MANAGER_CODE, "builds": {"test": outside}}) is None
+
+
+def test_pe_imports():
+    image, build = manager_image()
+    assert p.pe_imports(image, p.Pe(image)) == {"GetAsyncKeyState": build["keystate"]}
+    assert p.pe_imports(manager_image(imports=False)[0], p.Pe(image)) == {}
+    cut = image[: image.index(b"\0\0" + MANAGER_KEYSTATE)]  # the name lies behind the file's end
+    assert p.pe_imports(cut, p.Pe(image)) == {}
+
+
+def test_load_manager_code():
+    code = p.load_manager_code()
+    assert list(code["builds"]) == ["1999", "gog", "2007"]
+    assert code["cases"] == [13, 21, 25, 34, 35, 39]

@@ -129,7 +129,7 @@ missing=""
 for f in $(needed lutris.net/*.yml); do
   [[ -e "$out/$f" || "$f" == src/gsfix.so ]] || missing+=" $f"
 done
-for f in src/a2start.exe src/a2setup.exe src/a2v101.json; do [[ -e "$out/$f" ]] || missing+=" $f"; done
+for f in src/a2start.exe src/a2setup.exe src/a2v101.json src/a2manager.json; do [[ -e "$out/$f" ]] || missing+=" $f"; done
 if [[ -n "$missing" ]]; then
   report FAIL "release archive" "missing:$missing"
 else

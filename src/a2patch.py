@@ -3,13 +3,14 @@
 """Patches anstoss2.exe (1999 CD) or run.exe (GOG, 2007 CD) of Anstoss 2 Gold on disk.
 
     a2patch.py [--fixes] [--sound] [--arrows] [--video] [--freeze] [--disk] [--squad] [--investments]
-               [--money] [--events] [--crashes] [--competence] [--grades] [--appearances] [--fish]
-               [--manager] [--interviews] [--negotiation] [--goals] [--speeches] [--coaches]
-               [--disc-check] [--v101] <path to anstoss2.exe or run.exe>
+               [--money] [--events] [--crashes] [--referee] [--competence] [--grades] [--grade-chart]
+               [--appearances] [--fish] [--manager] [--lawn] [--interviews] [--negotiation] [--goals]
+               [--speeches] [--coaches] [--disc-check] [--v101] <path to anstoss2.exe or run.exe>
 
 --fixes  all bug fixes: --sound --arrows --video --freeze --disk --squad --investments --money --events
-         --crashes --competence --grades --appearances --fish --manager (the installer applies them to every
-         release, together with --interviews; A2G-Patch counts --fish and --manager as balancing).
+         --crashes --referee --competence --grades --grade-chart --appearances --fish --manager --lawn (the
+         installer applies them to every release, together with --interviews; A2G-Patch counts --fish and
+         --manager as balancing).
          --negotiation, --goals, --speeches and --coaches change how the game plays (balancing); the
          installer asks for each on a page of its own.
 
@@ -89,6 +90,11 @@
          player for an event return NULL if nobody fits, and four callers read through it without a test.
          Each gets the test in its own bytes.
 
+--referee  "Schiedsrichter mit Groll treffen in den Spielszenen den richtigen Verein" (bug fix): a referee's
+         grudge against a club (set by the microphone, interview answers or the affair of --manager) makes him
+         show its players more cards, but the scenes he decides compare it with the club's number plus one
+         and skip 0, so they hit the club with the next lower number. The patch drops both (3 nops).
+
 --competence  "Trainer und Manager in schwachen Ländern werden jährlich besser" (bug fix): the yearly
          balance of a country's competence adds the raise to the sum but never stores it; the patch stores
          it, in the same 36 bytes.
@@ -96,6 +102,11 @@
 --grades  "Einsätze ohne Note zählen nicht im Notenschnitt" (bug fix): the season average in the player's
          details and the fans' check for a hated player test the mark together with the cards, so a short
          appearance with a card counts as mark 0. Two places test the mark alone: test al,1F -> test al,1C.
+
+--grade-chart  "Notenverlauf in der Statistik mit 'Noten/6' statt 'Formpunkte/6' beschriften" (bug fix, part
+         of "Notenschnitt" in A2G-Patch): the chart of the average marks per week labels its axis with the
+         form chart's text. The patch assigns "Noten/6" from the exe, the string in the nops behind the
+         function; the two call targets are taken from the next label's text loader.
 
 --appearances  "Vereinsliste der meisten Einsätze nimmt nach 50 Spielern wieder neue auf" (bug fix): a
          player's leaving clears his flag "at the club" in the goals list only, so the appearances list is
@@ -108,10 +119,19 @@
          of its kind.
 
 --manager  "Weitere Ereignisse rund um den Manager" (balancing in A2G-Patch, in --fixes here): the
-         manager's private life draws from the table of the other kind of events, so 24 of its 38 cases
-         never come. The patch builds it from its own table (0x38 bytes behind), takes out case 34 (an
-         empty name in its text) and passes the manager's name twice for case 32, whose text holds it
-         twice.
+         manager's private life draws from the table of the other kind of events, so 25 of its 39 cases
+         never come. The patch builds it from its own table (0x38 bytes behind) and passes the manager's
+         name twice for case 32, whose text holds it twice. Six cases without working code (13, 21, 25, 34,
+         35, 39) get A2G-Patch's: src/a2manager.json (taken from its ManagerCode.cs by
+         src/a2managerbuild.py) is linked into three functions of the game nothing refers to, and the
+         switch's jump table leads there. Case 34's weight, which A2G-Linux 0.2.0 set to 0, goes back to 4.
+
+--lawn   "Rasenpflege ohne Strich unter Wine" (bug fix of A2G-Linux, not in A2G-Patch): the stadium's
+         button "Rasen pflegen (20.000 DM)" gets the state of the pitch behind a tab ("%s\t%s"), and the
+         game draws the button's text without expanding tabs. Windows leaves the tab out, Wine draws it as
+         a bar: "(20.000 DM)|Optimal". The two places push the game's own "%s\n%s" instead, so the state
+         stands on the button's second line. The other users of "%s\t%s" split their text into columns
+         at the tab and keep it.
 
 --interviews  "Antworten in Interviews wirken sich aus" (A2G-Patch counts it as balancing, the installer
          applies it every time): the answers' effect pairs are written to the engine's copy of the
@@ -180,7 +200,7 @@ Integrity of run.exe (GOG, 2007 CD, automatic): the 2007 release checks its own 
          the file checks once it is unpacked or patched. Whenever run.exe is written,
          a2patch.py therefore stores the correct values, so the checks pass as with the untouched original.
 
-All patches but --disc-check and --v101 are ports from A2G-Patch by transfairs
+All patches but --lawn, --disc-check and --v101 are ports from A2G-Patch by transfairs
 (GPLv3, https://github.com/transfairs/A2G-Patcher, Patches.cs and GameInstall.cs), with the same
 patterns and bytes. Like A2G-Patch, it writes the backup anstoss2.exe.vor-a2g-patch (run.exe.vor-a2g-patch)
 first, so A2G-Patch recognizes the result and can take the
@@ -1087,6 +1107,21 @@ def crash_sites(image):
     return rewrites_sites(image, CRASH_PLACES)
 
 
+# --- A referee's grudge hits the right club in the match's scenes (bug fix) ----------------------------
+# A2G-Patch's RefereeGrudge: a referee's record holds at +7 the club he holds a grudge against, or -1; the
+# match copies it to +22E. The cards compare it with the club's number, the scenes he decides (0x404ec0)
+# with the number plus one and skip 0, so they hit the club with the next lower number. The patch drops
+# both (no grudge, -1, never equals a number from 0 to 255):
+#     mov ax,[ebx+22E] / test ax,ax / je / xor edx,edx / mov dl,[edi+102] / movsx eax,ax / inc edx / cmp / jne
+#     ->  ... / test ax,ax / nop x2 / ... / nop / cmp eax,edx / jne
+REFEREE_ORIGINAL = wild("668b832e0200006685c0742733d28a97020100000fbfc0423bc27517")
+REFEREE_PATCHED = wild("668b832e0200006685c0909033d28a97020100000fbfc0903bc27517")
+
+
+def referee_sites(image):
+    return rewrite_sites(image, REFEREE_ORIGINAL, REFEREE_PATCHED)
+
+
 # --- Trainers and managers in weak countries improve yearly (bug fix) ---------------------------------
 # Generated from A2G-Patch's CompetenceBalance: the yearly balance of a country's competence (0x5cc740)
 # with an average under 6 adds 1 or 2 points for every tenth person to the sum, but never stores the new
@@ -1115,6 +1150,53 @@ GRADE_CODE = bytes.fromhex("a8807410a81f740c")
 
 def grade_sites(image):
     return opcode_sites(image, GRADE_CODE, 5, 0x1C, occurrences=2)
+
+
+# --- The grade chart's axis reads "Noten/6" (bug fix) ---------------------------------------------------
+# A2G-Patch's GradeChartLabel: the statistics' chart of the average marks per week (0x45ceb0, case 0x17)
+# loads its axis label through 0x619c10 as text 5800 of RESDLL.dll, "Formpunkte/6", the form chart's.
+# RESDLL.dll has no text for marks, so the patch assigns "Noten/6" from the exe, in the same 18 bytes; the
+# call pushes the address behind it, which the add moves to the string in the 9 nops behind the function:
+#     lea ecx,[esp+C] / push 16A8 / push ecx / call text / add esp,8
+#     ->  call $+5 / add dword [esp],5C / lea ecx,[esp+10] / call CString::operator=(const char*)
+# The next label (5801, "Woche") calls the same 0x619c10, whose first call is the assignment; both give
+# the patch the targets in either state.
+# fmt: off
+GRADE_CHART_REST = (  # from the second label to the function's end, as in all three builds
+    "8d54241068a916000052e8........83c404" "8d4424108bcc50e8........518d5424188bcc52e8........"
+    "8b8efc050100e8........8d4c2410e8........8d4c240ce8........5f5e5b83c468c3"
+)
+GRADE_CHART_ORIGINAL = wild("8d4c240c68a816000051e8........83c408" + GRADE_CHART_REST + "90" * 9)
+GRADE_CHART_PATCHED = wild("e800000000830424" "5c" "8d4c2410e8........" + GRADE_CHART_REST + b"Noten/6\0\x90".hex())
+GRADE_CHART_LOADER = wild(  # 0x619c10: the text by its number into the CString, through CString::operator=
+    "8b4c240881ec000200008d44240068000100005051e8........85c07518"
+    "8b8c240402000068........e8........81c400020000c3"
+)
+# fmt: on
+GRADE_CHART_TEXT_CALL, GRADE_CHART_ASSIGN_CALL, GRADE_CHART_NEXT_TEXT_CALL = 0x0A, 0x0D, 0x1C
+GRADE_CHART_LOADER_ASSIGN_CALL = 0x2A
+
+
+def grade_chart_sites(image):
+    """[(offset, original, patched, is_patched)] of the label's 18 bytes and the string behind, or None. The
+    call that changes reaches the text loader of the next label in the original, the loader's assignment
+    patched."""
+    site = rewrite_site(image, GRADE_CHART_ORIGINAL, GRADE_CHART_PATCHED)
+    if site is None:
+        return None
+    at, original, patched, is_patched = site
+    loader = call_target(image, at + GRADE_CHART_NEXT_TEXT_CALL)
+    if loader < 0 or find_all(image[loader : loader + len(GRADE_CHART_LOADER)], GRADE_CHART_LOADER) != [0]:
+        return None
+    assign = call_target(image, loader + GRADE_CHART_LOADER_ASSIGN_CALL)
+    original, patched = bytearray(original), bytearray(patched)
+    call = GRADE_CHART_TEXT_CALL
+    struct.pack_into("<i", original, call + 1, loader - (at + call + 5))
+    call = GRADE_CHART_ASSIGN_CALL
+    struct.pack_into("<i", patched, call + 1, assign - (at + call + 5))
+    if image[at : at + len(original)] != (patched if is_patched else original):
+        return None
+    return [(at, bytes(original), bytes(patched), is_patched)]
 
 
 # --- The club list of the most appearances takes new players after 50 (bug fix) ----------------------
@@ -1172,11 +1254,10 @@ def fish_sites(image):
 
 
 # --- More events around the manager (balancing in A2G-Patch, a fix here) ---------------------------------
-# Generated from A2G-Patch's ManagerEvents: the dispatcher of the manager's private life (0x55c900, 38
-# cases) is built from the table of the other kind of events (0x6BD248, 14 pairs), so cases 15 to 38 never
+# Generated from A2G-Patch's ManagerEvents: the dispatcher of the manager's private life (0x55c900, 39
+# cases) is built from the table of the other kind of events (0x6BD248, 14 pairs), so cases 15 to 39 never
 # come; their own table lies 0x38 bytes behind it (39 pairs, referenced nowhere). The patch builds the
-# dispatcher from it, gives case 34 (an empty name in its text) weight 0 and passes the manager's name twice
-# for case 32, whose text holds it twice.
+# dispatcher from it and passes the manager's name twice for case 32, whose text holds it twice.
 # fmt: off
 MANAGER_PLACES = (
     (  # the dispatcher's table
@@ -1184,10 +1265,6 @@ MANAGER_PLACES = (
              "d86685db0f8495000000668b15........33c06685d27e260fbfcb81c1606d0000"),
         wild("6affb8........83c038506a27b9........e8........c3909090909090909053565733f6b9........e8........8b"
              "d86685db0f8495000000668b15........33c06685d27e260fbfcb81c1606d0000"),
-    ),
-    (  # case 34: weight 0
-        wild("1900200019002100040022000200230001002400"),
-        wild("1900200019002100000022000200230001002400"),
     ),
     (  # case 32: the name twice
         wild("8d480a515068........52e8........83c4108d4424048d8c24f8010000505651e8........8b94240c0400008b8c24"
@@ -1197,10 +1274,179 @@ MANAGER_PLACES = (
     ),
 )
 # fmt: on
+# Six cases get code of their own: 13, 21, 35 and 39 have their texts but no code, 25 (an inheritance) builds
+# its text but neither shows it nor books anything, 34 names "%s, der Sie eigentlich gar nicht leiden kann"
+# with an empty string. A2G-Patch assembles the code (tools/manager_events.asm) into ManagerCode.cs, which
+# src/a2managerbuild.py takes into src/a2manager.json. It goes into three functions of the game nothing
+# refers to (the questions of 13, 21 and 35 behind the first, where the question dialog reaches them), and
+# the switch's jump table leads there. The builds are known by the switch's address, its table and the import
+# table entry of GetAsyncKeyState (GOG and the 2007 CD share the addresses, not the imports); taking the patch
+# back puts the three functions' original bytes back.
+MANAGER_CODE = os.path.join(HERE, "a2manager.json")
+# movsx eax,word [esp+7F4] / dec eax / cmp eax,26 / ja return 1 / jmp [eax*4+table]
+MANAGER_SWITCH = wild("0fbf8424f40700004883f8260f87........ff2485........")
+MANAGER_TABLE_AT = 21
+# The weights of cases 32 to 36 as A2G-Linux 0.2.0 (A2G-Patch 0.5.0) left them, case 34's set to 0, and as
+# the game has them: the 4 goes back.
+MANAGER_OLD_WEIGHTS = bytes.fromhex("1900200019002100000022000200230001002400")
+MANAGER_WEIGHTS = bytes.fromhex("1900200019002100040022000200230001002400")
+MANAGER_REGION_OF = (0, 0, 1, 2)  # the function each block goes into: MAIN and the questions into the first
+MANAGER_QUESTION_SIZE = 0x2C  # an entry of the question table
+MANAGER_FILL = 0xCC  # what the three functions hold where the code leaves room (int3)
 
 
-def manager_sites(image):
-    return rewrites_sites(image, MANAGER_PLACES)
+def load_manager_code():
+    """The code and the builds of src/a2manager.json."""
+    with open(MANAGER_CODE) as f:
+        return json.load(f)
+
+
+def manager_link(code, build):
+    """(the three functions with the code in place for build, where each case of code["cases"] now starts),
+    as A2G-Patch's ManagerEvents.Link: MAIN at the first function's start, the questions behind it at the next
+    place a whole number of question entries from the question table, KEYS and TABS at the other two, every
+    field filled in with an address or a distance, the rest int3."""
+    blocks = [bytes.fromhex(b) for b in code["blocks"]]
+    regions = build["regions"]
+    main_end = regions[0] + len(blocks[0])
+    questions = main_end + (build["questions"] - main_end) % MANAGER_QUESTION_SIZE
+    bases = [regions[0], questions, regions[1], regions[2]]
+    first = (questions - build["questions"]) // MANAGER_QUESTION_SIZE
+    values = bases + build["symbols"] + [first, first + 1, first + 2]
+    out = [bytearray([MANAGER_FILL]) * (len(o) // 2) for o in build["originals"]]
+    for b, data in enumerate(blocks):
+        data = bytearray(data)
+        for offset, relative, target, addend in code["fields"][b]:
+            value = values[target] + addend
+            if relative:
+                value -= bases[b] + offset + 4
+            struct.pack_into("<I", data, offset, value & 0xFFFFFFFF)
+        region = MANAGER_REGION_OF[b]
+        at = bases[b] - regions[region]
+        out[region][at : at + len(data)] = data
+    entries = [bases[block] + offset for block, offset in code["entries"]]
+    return [bytes(o) for o in out], entries
+
+
+def pe_imports(image, pe):
+    """{name: address of its import address table entry} of the functions the exe imports by name, as A2G-Patch's
+    PeFile.Imports; {} if the import directory can't be read."""
+    imports = {}
+
+    def at(rva):
+        offset = pe.file_offset(pe.image_base + rva)
+        if offset is None:
+            raise ValueError(rva)
+        return offset
+
+    def u32(offset):
+        return struct.unpack_from("<I", image, offset)[0]
+
+    try:
+        descriptor = at(u32(pe.optional + 104))
+        while u32(descriptor + 12):
+            lookup, table = at(u32(descriptor)), u32(descriptor + 16)
+            i = 0
+            while u32(lookup + 4 * i):
+                entry = u32(lookup + 4 * i)
+                if not entry & 0x80000000:  # not by ordinal
+                    name = at(entry) + 2
+                    imports[image[name : image.index(b"\0", name)].decode("latin-1")] = pe.image_base + table + 4 * i
+                i += 1
+            descriptor += 20
+    except (ValueError, struct.error):
+        return {}
+    return imports
+
+
+def manager_code_sites(image, pe, code, build):
+    """The jump table's entries and the three functions for build, or None if one holds neither its original
+    nor the code (A2G-Patch's ManagerEvents.CodeSites)."""
+    regions, entries = manager_link(code, build)
+    places = [
+        (build["table"] + 4 * (case - 1), struct.pack("<I", old), struct.pack("<I", new))
+        for case, old, new in zip(code["cases"], build["cases"], entries)
+    ]
+    places += [(va, bytes.fromhex(o), r) for va, o, r in zip(build["regions"], build["originals"], regions)]
+    sites = []
+    for va, original, patched in places:
+        offset = pe.file_offset(va)
+        now = None if offset is None else image[offset : offset + len(original)]
+        if now not in (original, patched):
+            return None
+        sites.append((offset, original, patched, now == patched))
+    return sites
+
+
+def manager_sites(image, code=None):
+    """[(offset, original, patched, is_patched)] of the two rewrites, the six entries of the jump table and the
+    three functions of a known build, plus case 34's weight where A2G-Linux 0.2.0 set it to 0; or None."""
+    places = [rewrite_site(image, original, patched) for original, patched in MANAGER_PLACES]
+    switches = find_all(image, MANAGER_SWITCH)
+    if None in places or image[:2] != b"MZ" or len(switches) != 1:
+        return None
+    pe = Pe(image)
+    code = code or load_manager_code()
+    at, table = pe.va_at(switches[0]), struct.unpack_from("<I", image, switches[0] + MANAGER_TABLE_AT)[0]
+    keystate = pe_imports(image, pe).get("GetAsyncKeyState", 0)
+    builds = [b for b in code["builds"].values() if (b["switch"], b["table"], b["keystate"]) == (at, table, keystate)]
+    sites = manager_code_sites(image, pe, code, builds[0]) if builds else None
+    if sites is None:
+        return None
+    sites = places + sites
+    old = find_all(image, MANAGER_OLD_WEIGHTS)
+    if len(old) == 1:
+        sites.append((old[0], MANAGER_OLD_WEIGHTS, MANAGER_WEIGHTS, False))
+    return sites
+
+
+# --- The lawn care button without a bar under Wine (bug fix of A2G-Linux) ------------------------------
+# The stadium's button "Rasen pflegen (%s)" (control 4446 of RESDLL.dll) gets its text from
+# sprintf("%s\t%s", costs, state of the pitch) in two places (0x514330, 0x514e70 in the 1999 exe). The
+# game's own static class draws it with DrawText without DT_EXPANDTABS: Windows leaves the tab out, Wine
+# draws it as a bar ("(20.000 DM)|Optimal"). Both places push the game's own "%s\n%s" instead, so the
+# state goes to a second line of the button, which is two lines high. The other 27 users of "%s\t%s" fill
+# lists and controls that split their text at the tab into columns; they keep it.
+# fmt: off
+LAWN_PLACES = (
+    # movzx dx,[ecx+89B] (state of the pitch) / push edx / push eax / call state text / mov ecx,[esp+18] /
+    # add esp,8 / lea edx,[esp+40] / lea eax,[esp+108] / push ecx / push edx / push format / push eax /
+    # call sprintf / add esp,10 / lea ecx,[esp+108] / lea edi,[ebx+1440] (the button)
+    wild("660fb6919b0800005250e8........8b4c241883c4088d5424408d8424080100005152",
+         "68........50e8........83c4108d8c24080100008dbb40140000"),
+    # movzx ax,[edx+89B] / push eax / push ecx / call state text / mov edx,[esp+10] / add esp,8 /
+    # lea eax,[esp+5A8] / lea ecx,[esp+738] / push edx / push eax / push format / push ecx / call sprintf /
+    # add esp,10 / lea edi,[esi+1440] (the button)
+    wild("660fb6829b0800005051e8........8b54241083c4088d8424a80500008d8c24380700005250",
+         "68........51e8........83c4108dbe40140000"),
+)
+# fmt: on
+LAWN_FORMAT_AT = (36, 39)  # the pushed address in each place
+LAWN_TAB, LAWN_NEWLINE = b"\0%s\t%s\0", b"\0%s\n%s\0"
+
+
+def lawn_sites(image):
+    """[(offset, address of "%s\\t%s", address of "%s\\n%s", is_patched)] of the two pushes, or None."""
+    if image[:2] != b"MZ":
+        return None
+    pe = Pe(image)
+    strings = [find_all(image, s) for s in (LAWN_TAB, LAWN_NEWLINE)]
+    if any(len(found) != 1 for found in strings):
+        return None
+    tab, newline = (pe.va_at(found[0] + 1) for found in strings)
+    if tab is None or newline is None:
+        return None
+    original, patched = struct.pack("<I", tab), struct.pack("<I", newline)
+    sites = []
+    for pattern, at in zip(LAWN_PLACES, LAWN_FORMAT_AT):
+        found = find_all(image, pattern)
+        if len(found) != 1:
+            return None
+        current = image[found[0] + at : found[0] + at + 4]
+        if current not in (original, patched):
+            return None
+        sites.append((found[0] + at, original, patched, current == patched))
+    return sites
 
 
 # --- Headers of a PE file, for the patches that add code -----------------------------------------
@@ -1652,14 +1898,17 @@ PATCHES = {
     "money": ("club ledger stops at 2 billion DM", money_sites),
     "events": ("random events take the effect their message gives them", event_sites),
     "crashes": ("no crash on events without a fitting player", crash_sites),
+    "referee": ("a referee's grudge hits the right club in the match's scenes", referee_sites),
     "competence": ("trainers and managers in weak countries improve yearly", competence_sites),
     "grades": ("appearances without a mark kept out of the average", grade_sites),
+    "grade_chart": ("grade chart labelled Noten/6", grade_chart_sites),
     "appearances": ("club list of the most appearances takes new players after 50", appearances_sites),
     "negotiation": ("negotiation lock wears off monthly", negotiation_sites),
     "speeches": ("unfitting speeches weaken the team", speech_sites),
     "coaches": ("former players become trainers from 33, others with competence 3 to 11", coach_sites),
     "fish": ("fish poisoning keeps a player out for three weeks", fish_sites),
     "manager": ("all events around the manager's private life", manager_sites),
+    "lawn": ("lawn care button without a bar under Wine", lawn_sites),
     "disc_check": ("CD checks of the 2007 release pass", disc_check_sites),
 }
 # Patches that add code to the file, in the order they are applied (1.01's section stays last where possible).
@@ -1679,11 +1928,14 @@ FIXES = (
     "money",
     "events",
     "crashes",
+    "referee",
     "competence",
     "grades",
+    "grade_chart",
     "appearances",
     "fish",
     "manager",
+    "lawn",
 )
 # balancing patches the installer applies on every install as well, behind --fixes
 ALWAYS = ("interviews",)
@@ -1706,11 +1958,14 @@ def main():
     ap.add_argument("--money", action="store_true", help="the club's ledger stops at 2 billion DM")
     ap.add_argument("--events", action="store_true", help="random events take the effect their message gives them")
     ap.add_argument("--crashes", action="store_true", help="no crash on events without a fitting player")
+    ap.add_argument("--referee", action="store_true", help="a referee's grudge hits the right club")
     ap.add_argument("--competence", action="store_true", help="trainers in weak countries improve yearly")
     ap.add_argument("--grades", action="store_true", help="appearances without a mark kept out of the average")
+    ap.add_argument("--grade-chart", action="store_true", help="the grade chart's axis reads Noten/6")
     ap.add_argument("--appearances", action="store_true", help="the most appearances list takes new players")
     ap.add_argument("--fish", action="store_true", help="fish poisoning keeps a player out 3 weeks")
     ap.add_argument("--manager", action="store_true", help="all events around the manager")
+    ap.add_argument("--lawn", action="store_true", help="lawn care button without a bar under Wine")
     ap.add_argument("--fixes", action="store_true", help="all bug fixes: " + " ".join("--" + k for k in FIXES))
     ap.add_argument("--interviews", action="store_true", help="interview answers take effect (always applied)")
     ap.add_argument("--negotiation", action="store_true", help="balancing: negotiation lock wears off monthly")

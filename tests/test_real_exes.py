@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+import a2managerbuild
 import a2patch
 from a2v101build import relocate
 
@@ -151,6 +152,24 @@ def test_cd(cd_exe):
     assert len(patched) > len(original)  # .a2int
 
 
+def test_cd_manager_events_of_a2g_linux_0_2(cd_exe, tmp_path):
+    """An exe with the manager events of A2G-Linux 0.2.0 (case 34's weight 0) gets the cases' code and the 4
+    back, as an untouched one gets them."""
+    original = cd_exe.read_bytes()
+    old = bytearray(original)
+    for at, _, new, _ in a2patch.rewrites_sites(original, a2patch.MANAGER_PLACES):
+        old[at : at + len(new)] = new
+    weights = original.index(a2patch.MANAGER_WEIGHTS)
+    old[weights : weights + len(a2patch.MANAGER_WEIGHTS)] = a2patch.MANAGER_OLD_WEIGHTS
+    run("a2patch.py", "--manager", cd_exe)
+    fresh = cd_exe.read_bytes()
+    upgraded = tmp_path / "old" / "anstoss2.exe"
+    upgraded.parent.mkdir()
+    upgraded.write_bytes(old)
+    assert "all events around the manager's private life: patched" in run("a2patch.py", "--manager", upgraded)
+    assert upgraded.read_bytes() == fresh
+
+
 def test_gog(gog_game):
     original, patched = install(gog_game / "run.exe", "--disc-check", "--v101")
     check_run_exe(original, patched)
@@ -174,6 +193,7 @@ REWRITES = {
     "EventCrashes": a2patch.CRASH_PLACES,
     "AppearancesList": a2patch.APPEARANCES_PLACES,
     "ManagerEvents": a2patch.MANAGER_PLACES,
+    "RefereeGrudge": ((a2patch.REFEREE_ORIGINAL, a2patch.REFEREE_PATCHED),),
     "CompetenceBalance": ((a2patch.COMPETENCE_ORIGINAL, a2patch.COMPETENCE_PATCHED),),
     "FishPoisoning": ((a2patch.FISH_ORIGINAL, a2patch.FISH_PATCHED),),
 }
@@ -213,3 +233,47 @@ def test_rewrites_are_a2g_patchs():
     code = bytes(int(b, 16) for b in re.search(r"Exact\(([^)]*)\)", grades)[1].split(","))
     assert code == a2patch.GRADE_CODE
     assert "At => 5;" in grades and "PatchedByte => 0x1C;" in grades and "Occurrences => 2;" in grades
+
+
+def test_grade_chart_label_is_a2g_patchs():
+    """The patterns of the grade chart's label are those of A2G-Patch's GradeChartLabel."""
+    patcher = env_path("A2G_PATCHER")
+    block = a2g_patch_class((patcher / "Patches.cs").read_text(encoding="utf-8"), "GradeChartLabel")
+    rest = cs_hex(re.search(r"string Rest = (.*?);", block, re.S)[1])
+
+    def pattern(name):
+        expression = re.search(rf"{name} =(.*?)\.Pattern\(\);", block, re.S)[1]
+        return "".join(rest if part.strip() == "Rest" else cs_hex(part) for part in re.split(r"\+", expression))
+
+    def as_hex(pattern):
+        return "".join("??" if b is None else f"{b:02X}" for b in pattern)
+
+    assert pattern("OriginalCode") == as_hex(a2patch.GRADE_CHART_ORIGINAL)
+    assert pattern("PatchedCode") == as_hex(a2patch.GRADE_CHART_PATCHED)
+    assert pattern("LoaderCode") == as_hex(a2patch.GRADE_CHART_LOADER)
+    calls = re.search(r"TextCall = (\w+), AssignCall = (\w+), NextTextCall = (\w+), LoaderAssignCall = (\w+);", block)
+    assert [int(c, 0) for c in calls.groups()] == [
+        a2patch.GRADE_CHART_TEXT_CALL,
+        a2patch.GRADE_CHART_ASSIGN_CALL,
+        a2patch.GRADE_CHART_NEXT_TEXT_CALL,
+        a2patch.GRADE_CHART_LOADER_ASSIGN_CALL,
+    ]
+
+
+def test_manager_code_is_a2g_patchs():
+    """src/a2manager.json holds A2G-Patch's ManagerCode.cs, and the switch, the weights and the layout are those
+    of its ManagerEvents."""
+    patcher = env_path("A2G_PATCHER")
+    source = (patcher / "ManagerCode.cs").read_text(encoding="utf-8")
+    assert a2managerbuild.parse(source) == a2patch.load_manager_code()
+    block = a2g_patch_class((patcher / "Patches.cs").read_text(encoding="utf-8"), "ManagerEvents")
+    assert cs_hex(re.search(r"SwitchPattern = (.*?)\.Pattern", block)[1]) == "".join(
+        "??" if b is None else f"{b:02X}" for b in a2patch.MANAGER_SWITCH
+    )
+    assert f"TableAt = {a2patch.MANAGER_TABLE_AT};" in block
+    weights = re.search(r'OldWeights = "(\w+)"\.Hex\(\), Weights = "(\w+)"', block)
+    assert bytes.fromhex(weights[1]) == a2patch.MANAGER_OLD_WEIGHTS
+    assert bytes.fromhex(weights[2]) == a2patch.MANAGER_WEIGHTS
+    assert "RegionOf = { %s };" % ", ".join(map(str, a2patch.MANAGER_REGION_OF)) in block
+    assert f"QuestionSize = 0x{a2patch.MANAGER_QUESTION_SIZE:X};" in block
+    assert f"Fill = 0x{a2patch.MANAGER_FILL:X};" in block
