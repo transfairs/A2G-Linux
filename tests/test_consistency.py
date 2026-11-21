@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 import a2patch
+import a2texts
 
 ROOT = Path(__file__).resolve().parent.parent
 # variant of anstoss2.yml.in (install.sh's VARIANT), its lutris.net script and the exe it patches
@@ -72,7 +73,15 @@ def lutris_script(variant):
 
 
 def balancing_questions(script):
-    return [q for q in questions(script) if q[0] not in OTHER_QUESTIONS]
+    return [q for q in questions(script) if q[0] not in OTHER_QUESTIONS + tuple(a2texts.QUESTIONS)]
+
+
+def text_questions(script):
+    return [q for q in questions(script) if q[0] in a2texts.QUESTIONS]
+
+
+def option(key):
+    return "--" + key.replace("_", "-")
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
@@ -99,6 +108,34 @@ def test_lutris_script_asks_what_install_sh_asks(variant):
     ours = [q[:4] for q in questions(render(variant))]
     theirs = [q[:4] for q in questions(lutris_script(variant))]
     assert ours == theirs
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_text_questions_follow_the_balancing_patches(variant):
+    """One page each for the Euro and the centre-back, one for the names; the typing errors every time, before
+    them and after patch 1.01's data and the dialog styles; the contract terms only on the command line."""
+    game = '"$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+    for script in (render(variant), lutris_script(variant)):
+        ids = [q[0] for q in questions(script)]
+        first = ids.index(a2patch.BALANCING[-1].upper()) + 1
+        assert ids[first : first + len(a2texts.QUESTIONS)] == list(a2texts.QUESTIONS)
+        for key, _, options, preselect, command in text_questions(script):
+            assert preselect == "no" and options[0] == {"no": "Original beibehalten"} and "yes" in options[1]
+            switches = " ".join(option(k) for k in a2texts.QUESTIONS[key])
+            assert command.startswith(f'test "$INPUT_{key}" != yes || python3 ')
+            assert command.endswith(f'/src/a2texts.py" {switches} {game}')
+        commands = [v.get("command", "") for kind, v in steps(script) if kind == "execute"]
+        always = [i for i, c in enumerate(commands) if c.endswith(f'/src/a2texts.py" --typos {game}')]
+        assert len(always) == 1 and all("a2texts.py" not in c for c in commands[: always[0]])
+        assert all(always[0] > i for i, c in enumerate(commands) if "a2data101.py" in c or "a2resdll.py" in c)
+        assert all(always[0] > i for i, c in enumerate(commands) if "a2import.py" in c)
+        assert not any("--contracts" in c for c in commands)
+
+
+def test_text_switches_are_asked_once_or_applied_every_time():
+    asked = [k for keys in a2texts.QUESTIONS.values() for k in keys]
+    every = asked + list(a2texts.ALWAYS + a2texts.COMMAND_LINE_ONLY)
+    assert sorted(every) == sorted(p.option for p in a2texts.PATCHES) and len(set(every)) == len(every)
 
 
 def test_balancing_questions_are_the_same_for_every_variant():
@@ -143,6 +180,8 @@ def test_readme_documents_every_patch():
     readme = text("README.md")
     for key in a2patch.FIXES + a2patch.ALWAYS + a2patch.BALANCING + ("disc_check", "v101", "fixes"):
         assert f"`--{key.replace('_', '-')}`" in readme, key
+    for patch in a2texts.PATCHES:
+        assert f"`{option(patch.option)}`" in readme, patch.option
 
 
 def test_project_page_has_both_languages_everywhere():

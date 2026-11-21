@@ -27,8 +27,8 @@
 #    A2G-Icon can be fetched.
 #    Lutris then asks for the icon (the game's own, A2G-Icon's if it can be fetched, or own files; the
 #    last two also become the picture in the middle of the virtual desktop), optionally imports a data
-#    set and save games, applies the bug fixes (src/a2patch.py --fixes --interviews) and the balancing
-#    patches the player picks.
+#    set and save games, applies the bug fixes (src/a2patch.py --fixes --interviews, src/a2texts.py
+#    --typos) and the balancing patches and text changes the player picks.
 #
 # Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity,
 # glib-compile-schemas; curl for downloading GE-Proton11-12.

@@ -1496,10 +1496,11 @@ class Pe:
         return self.table + 40 * (len(self.sections) + 1) <= min(s[4] for s in self.sections)
 
 
-def add_section(image, name, data):
-    """image with a section holding data as writable code, loaded right behind the image, as A2G-Patch's
-    PeFile.AddSection does: the data goes behind everything in the file, and the 40 bytes the new header
-    overwrites (GOG's run.exe has leftovers there) are kept right behind the data."""
+def add_section(image, name, data, characteristics=WRITABLE_CODE):
+    """image with a section holding data (by default as writable code; characteristics are the section's
+    flags), loaded right behind the image, as A2G-Patch's PeFile.AddSection does: the data goes behind
+    everything in the file, and the 40 bytes the new header overwrites (GOG's run.exe has leftovers there)
+    are kept right behind the data."""
     pe = Pe(image)
     raw = align_up(len(image), pe.file_alignment)
     raw_size = align_up(len(data) + 40, pe.file_alignment)
@@ -1520,7 +1521,7 @@ def add_section(image, name, data):
         0,
         0,
         0,
-        WRITABLE_CODE,
+        characteristics,
     )
     struct.pack_into("<H", result, pe.header + 6, len(pe.sections) + 1)
     struct.pack_into("<I", result, pe.optional + 56, pe.size_of_image + align_up(len(data), pe.section_alignment))

@@ -282,3 +282,28 @@ def test_main_usage(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["a2resdll.py"])
     with pytest.raises(SystemExit, match="a2resdll.py <game folder>"):
         runpy.run_path(r.__file__, run_name="__main__")
+
+
+def test_main_keeps_the_texts_of_a2texts(tmp_path, monkeypatch, capsys):
+    """RESDLL.dll is known without the changes of src/a2texts.py, which stay over the dialogs of 1999."""
+    import a2texts
+
+    src = bytearray(pe_file([(r.DE, 7, template(0x80000000, controls=[(0, 0)]))]))
+    opt = 0x40 + 24
+    src[:2] = b"MZ"
+    struct.pack_into("<III", src, opt + 28, 0x10000000, 0x1000, 0x200)  # image base, alignments
+    struct.pack_into("<I", src, opt + 56, 0x2000)  # size of image
+    src = bytes(src)
+    monkeypatch.setattr(a2texts, "PATCHES", (a2texts.Patch("X", "x", "X", (a2texts.dialogs("OK", "Gut", 7),)),))
+    monkeypatch.setattr(a2texts, "KEYS", ("X",))
+    texts = a2texts.build(a2texts.Resources.read(src), {"X"})
+    (tmp_path / "RESDLL.dll").write_bytes(texts)
+    monkeypatch.setattr(r, "GOG", r.sha(src))
+    monkeypatch.setattr(r, "RESULT", r.sha(r.restore(src)))
+    run_main(monkeypatch, tmp_path)
+    dll = (tmp_path / "RESDLL.dll").read_bytes()
+    assert (tmp_path / ("RESDLL.dll" + r.BACKUP_SUFFIX)).read_bytes() == src
+    assert a2texts.plain_resources(dll) == r.restore(src)
+    assert a2texts.Resources.read(dll).applied == ["X"]
+    run_main(monkeypatch, tmp_path)
+    assert capsys.readouterr().out.endswith("already there\n")

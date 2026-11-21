@@ -369,6 +369,46 @@ script:
         command: 'test "$INPUT_COACHES" != yes || python3 "$CACHE/a2g/src/a2patch.py" --coaches "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/run.exe"'
         disable_runtime: true
 
+    # Texts from A2G-Patch in RESDLL.dll, the event texts and the tips (src/a2texts.py, see README), after
+    # the data set, which may bring files of its own, and after patch 1.01's data and the dialog styles:
+    # typing errors (--typos, a bug fix in A2G-Patch) every time, then optionally one page each
+    - execute:
+        command: 'python3 "$CACHE/a2g/src/a2texts.py" --typos "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Beträge in Euro statt DM anzeigen? Alle Beträge im Spiel, in Dialogen, Ereignissen und Tipps erscheinen dann mit € statt DM. Die Zahlen bleiben gleich: 1 DM wird zu 1 €. „DM“ als Abkürzung des defensiven Mittelfelds bleibt.'
+        id: EURO
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Euro statt DM
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_EURO" != yes || python3 "$CACHE/a2g/src/a2texts.py" --euro "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Innenverteidiger (IV) statt Manndecker (MD)? Die Position heißt dann in Listen, Suchdialogen, der Nationalmannschaft und den Meldungen des Spiels Innenverteidiger.'
+        id: CENTREBACK
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Innenverteidiger
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_CENTREBACK" != yes || python3 "$CACHE/a2g/src/a2texts.py" --centre-back "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true
+
+    - input_menu:
+        description: 'Heutige Namen für Wettbewerbe, Ligen und Gruppen? UEFA-Cup, Cup der Pokalsieger, Weltcup und ECL-Cup statt UEFA-Pokal, Pokal der Pokalsieger, Weltpokal und UI-Cup; 1. und 2. Bundesliga, Regionalliga West, Championship, League One, Ligue 1 und 2; Gruppen A bis H statt 1 bis 8.'
+        id: NAMES
+        options:
+          - 'no': Original beibehalten
+          - 'yes': Heutige Namen
+        preselect: 'no'
+    - execute:
+        command: 'test "$INPUT_NAMES" != yes || python3 "$CACHE/a2g/src/a2texts.py" --cups --leagues --groups "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true
+
     # Editor and, optionally, A2G-Trainer: entries in the application menu, started in this prefix
     # (src/a2run.sh). Not a Lutris file, since those cannot be optional. Own slug anstoss-2-2007 for their
     # files, so they never replace the entries of an install.sh installation (anstoss-2-gold-2007).

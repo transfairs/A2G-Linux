@@ -9,7 +9,8 @@ Patch 1.01 changes three data files; all three are made here from the GOG files 
 - TEXTE/EreigGld.saq (event texts; run.exe reads the same file as TEXTE/EreigGold.saq): two texts end
   with "." instead of ":". The file is decrypted (each byte XOR the previous encrypted byte, starting
   with the low byte of the length), the two characters are changed and the file is encrypted again;
-  written under both names. The result is identical to the file of patch 1.01.
+  written under both names. The result is identical to the file of patch 1.01. The file is known by
+  its texts without the changes of src/a2texts.py, which stay.
 - DATA.DEF/LAENDER.SAV, DATA.VER/LAENDER.SAV: one value changes from 3 to 4 (identical to 1.01).
 - ARCHIVES/MoveList.dat: new in 1.01, the animation of the sign in the video window
   of the cup draw. Computed by src/a2movelist.py (see there; inside the sign at most one pixel off
@@ -28,6 +29,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import a2movelist  # noqa: E402
+import a2texts  # noqa: E402
 from a2import import match  # noqa: E402
 
 BACKUP_SUFFIX = ".vor-1.01"
@@ -102,28 +104,32 @@ def laender_101(data):
     return bytes(data)
 
 
-def change(game, rels, make, hashes, label):
-    """Applies make() to the GOG file of rels[0] and writes the result to all rels; True if ok."""
+def change(game, rels, make, hashes, label, plain=lambda data: data):
+    """Applies make() to the GOG file of rels[0] and writes the result to all rels; True if ok. The files are
+    known by the SHA-256 of plain(data): for the event texts without the changes of src/a2texts.py, which
+    stay (the current file is taken before the backup)."""
     gog, v101 = hashes
     current = game_path(game, rels[0])
     if not os.path.isfile(current):
         print(f"Patch 1.01: {rels[0]} missing")
         return False
-    src = read(original(current))
-    if sha(read(current)) == v101 and all(
-        os.path.isfile(game_path(game, r)) and sha(read(game_path(game, r))) == v101 for r in rels
-    ):
+    if all(os.path.isfile(game_path(game, r)) and sha(plain(read(game_path(game, r)))) == v101 for r in rels):
         print(f"Patch 1.01: {label} already applied")
         return True
-    if sha(src) != gog:
+    for src in (read(current), read(original(current))):
+        if sha(plain(src)) in hashes:
+            break
+    else:
         print(f"Patch 1.01: {rels[0]} is not the file of the GOG version, {label} left out")
         return False
-    result = make(src)
-    if result is None or sha(result) != v101:
+    result = make(src) if sha(plain(src)) == gog else src
+    if result is None or sha(plain(result)) != v101:
         print(f"Patch 1.01: {label}: unexpected result, left out")
         return False
     for rel in rels:
-        write(game_path(game, rel), result)
+        path = game_path(game, rel)
+        if not os.path.isfile(path) or read(path) != result:
+            write(path, result)
     print(f"Patch 1.01: {label}")
     return True
 
@@ -134,7 +140,8 @@ def main():
     if len(sys.argv) != 2:
         sys.exit(__doc__.strip().splitlines()[2].strip())
     game = sys.argv[1]
-    ok = change(game, ["TEXTE/EreigGold.saq", "TEXTE/EreigGld.saq"], events_101, EVENTS, "event texts")
+    events = ["TEXTE/EreigGold.saq", "TEXTE/EreigGld.saq"]
+    ok = change(game, events, events_101, EVENTS, "event texts", a2texts.plain_events)
     ok &= change(game, ["DATA.DEF/LAENDER.SAV", "DATA.VER/LAENDER.SAV"], laender_101, LAENDER, "LAENDER.SAV")
     movelist = game_path(game, "ARCHIVES/MoveList.dat")
     data = a2movelist.build()

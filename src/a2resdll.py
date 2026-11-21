@@ -24,8 +24,9 @@ Not changed: texts of different length (version "1.0" in the info dialog, "Champ
 string 6390 "Managerkarriere") and four pictures, all of which the 2007 release changed on purpose.
 
 Everything is changed in place, the file keeps its size. Input and result are checked against
-their SHA-256; on a mismatch the file is left unchanged and the exit code is 1. The original is
-kept as RESDLL.dll.vor-dialoge.
+their SHA-256, taken without the changes of src/a2texts.py, which stay over the dialogs; on a
+mismatch the file is left unchanged and the exit code is 1. The original is kept as
+RESDLL.dll.vor-dialoge.
 """
 
 import hashlib
@@ -36,6 +37,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import a2texts  # noqa: E402
 from a2import import match  # noqa: E402
 
 BACKUP_SUFFIX = ".vor-dialoge"
@@ -229,13 +231,14 @@ def main():
     backup = path + BACKUP_SUFFIX
     with open(path, "rb") as f:
         current = f.read()
-    if sha(current) == RESULT:
+    # known without the changes of src/a2texts.py, which stay over the dialogs
+    src = a2texts.plain_resources(current)
+    if sha(src) == RESULT:
         print("RESDLL.dll: dialog styles of 1999 already there")
         return
-    src = current
     if os.path.exists(backup):
         with open(backup, "rb") as f:
-            src = f.read()
+            src = a2texts.plain_resources(f.read())
     if sha(src) != GOG:
         print("RESDLL.dll is not the file of the GOG version, dialog styles left unchanged")
         sys.exit(1)
@@ -244,9 +247,13 @@ def main():
         print("RESDLL.dll: unexpected result, dialog styles left unchanged")
         sys.exit(1)
     if not os.path.exists(backup):
-        shutil.copy2(path, backup)
+        if current == src:
+            shutil.copy2(path, backup)
+        else:
+            with open(backup, "wb") as f:
+                f.write(src)
     with open(path, "wb") as f:
-        f.write(result)
+        f.write(a2texts.with_texts_of(current, result))
     print("RESDLL.dll: dialog styles of 1999")
 
 

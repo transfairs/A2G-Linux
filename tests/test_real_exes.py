@@ -27,6 +27,7 @@ import pytest
 
 import a2managerbuild
 import a2patch
+import a2texts
 from a2v101build import relocate
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -277,3 +278,113 @@ def test_manager_code_is_a2g_patchs():
     assert "RegionOf = { %s };" % ", ".join(map(str, a2patch.MANAGER_REGION_OF)) in block
     assert f"QuestionSize = 0x{a2patch.MANAGER_QUESTION_SIZE:X};" in block
     assert f"Fill = 0x{a2patch.MANAGER_FILL:X};" in block
+
+
+# --- texts (src/a2texts.py) -------------------------------------------------------------------------------
+
+TEXT_OPTIONS = ["--" + p.option.replace("_", "-") for p in a2texts.PATCHES]
+
+
+def text_files(game):
+    """{name: bytes} of the files the text switches change, as far as game has them."""
+    files = a2texts.GameFiles(str(game))
+    names = ("RESDLL.dll", *a2texts.EVENT_FILES, a2texts.TIPS_FILE)
+    return {n: files.read(n) for n in names if files.read(n) is not None}
+
+
+def check_texts(game, *scripts):
+    """Every switch fits the release's texts; all on (the installer's --typos first), the scripts that know the
+    files by their SHA-256 run again and find them as they left them, then all off: the files as before."""
+    before = text_files(game)
+    assert "RESDLL.dll" in before and a2texts.TIPS_FILE in before
+    assert any(n in before for n in a2texts.EVENT_FILES)
+    assert run("a2texts.py", "--typos", game) == "Tippfehler: on\n"
+    out = run("a2texts.py", *TEXT_OPTIONS, game)
+    assert out.count(": on\n") == len(a2texts.PATCHES) - 1 and "Tippfehler: already on" in out
+    files = a2texts.GameFiles(str(game))
+    assert all(a2texts.state(p, files) == "on" for p in a2texts.PATCHES)
+    assert a2texts.plain_resources(files.read("RESDLL.dll")) == before["RESDLL.dll"]
+    for name in a2texts.EVENT_FILES:
+        if name in before:
+            texts = a2texts.read_events(files.read(name))
+            assert len(files.read(name)) == len(before[name]) and texts[909] == "Innenverteidiger", name
+            assert a2texts.plain_events(files.read(name)) == before[name]
+    for script in scripts:
+        assert "already" in run(script, game)
+    assert text_files(game) != before
+    out = run("a2texts.py", "--off", *TEXT_OPTIONS, game)
+    assert out.count(": off\n") == len(a2texts.PATCHES)
+    assert text_files(game) == before
+
+
+def test_cd_texts(tmp_path):
+    folder = env_path("A2G_CD_EXE").parent
+    for name in ("RESDLL.dll", "TEXTE/EreigGld.saq", "TEXTE/tips.txt"):
+        source = Path(a2texts.GameFiles(str(folder)).path(name))
+        if not source.is_file():
+            pytest.skip(f"no {name} next to A2G_CD_EXE")
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        shutil.copyfile(source, tmp_path / name)
+    check_texts(tmp_path)
+
+
+def test_gog_texts(gog_game):
+    run("a2data101.py", gog_game)
+    run("a2resdll.py", gog_game)
+    check_texts(gog_game, "a2data101.py", "a2resdll.py")
+
+
+def test_2007_cd_texts(dvd_exe):
+    game = dvd_exe.parent
+    run("a2data101.py", game, check=False)  # the DVD's LAENDER.SAV is not where GOG has it
+    check_texts(game, "a2data101.py")
+
+
+def cs_arguments(source, at):
+    """The arguments (strings and numbers) of the call whose "(" is at at, and where it ends."""
+    args, depth, i = [], 0, at
+    while True:
+        c = source[i]
+        if c == '"':
+            end = source.index('"', i + 1)
+            args.append(source[i + 1 : end])
+            i = end
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return args, i
+        elif c.isdigit() and not source[i - 1].isalnum():
+            number = re.match(r"\d+", source[i:])[0]
+            args.append(int(number))
+            i += len(number) - 1
+        i += 1
+
+
+def test_texts_are_a2g_patchs():
+    """The switches' texts, ids and order are those of A2G-Patch's TextPatches.cs."""
+    patcher = env_path("A2G_PATCHER")
+    source = (patcher / "TextPatches.cs").read_text(encoding="utf-8")
+    theirs = {}
+    for name in a2texts.KEYS:
+        body = a2g_patch_class(source, name)
+        changes = []
+        for m in re.finditer(r"TextChange\.(Strings|Dialogs|Event|Tips)\(", body):
+            args, _ = cs_arguments(body, m.end() - 1)
+            kind = m[1]
+            if kind == "Event":
+                changes.append((a2texts.EVENT, args[1], args[2], (args[0],)))
+            elif kind == "Tips":
+                changes.append((a2texts.TIPS, args[0], args[1], ()))
+            else:
+                changes.append(
+                    (a2texts.STRING if kind == "Strings" else a2texts.DIALOG, args[0], args[1], tuple(args[2:]))
+                )
+        title = re.search(r'Title => "([^"]*)"', body)[1]
+        theirs[name] = (title, changes)
+    assert {p.key: (p.title, [tuple(c) for c in p.changes]) for p in a2texts.PATCHES} == theirs
+    # the order of InOrder: the switches as in Patch.All, then the game's bugs
+    patches = (patcher / "Patches.cs").read_text(encoding="utf-8")
+    order = [m for m in re.findall(r"new (\w+)\(\)", patches) if m in a2texts.KEYS]
+    assert tuple(dict.fromkeys(order)) == a2texts.KEYS

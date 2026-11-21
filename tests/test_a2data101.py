@@ -139,3 +139,26 @@ def test_run_as_script(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["a2data101.py"])
     with pytest.raises(SystemExit, match="a2data101.py <game folder>"):
         runpy.run_path(d.__file__, run_name="__main__")
+
+
+def test_events_keep_the_texts_of_a2texts(tmp_path, monkeypatch, capsys):
+    """The event file is known without the changes of src/a2texts.py; they stay, before and after 1.01."""
+    import a2texts
+
+    monkeypatch.setattr(a2texts, "PATCHES", (a2texts.Patch("X", "x", "X", (a2texts.event(3, "Text 3", "Txet 3"),)),))
+    plain = encrypt(b"\0".join(f"Text {i}".encode() + (b":" if i in d.EVENT_TEXTS else b"") for i in range(60)) + b"\0")
+    texts = a2texts.change_events(plain, a2texts.PATCHES[0].changes, True)
+    hashes = (d.sha(plain), d.sha(d.events_101(plain)))
+    (tmp_path / "TEXTE").mkdir()
+    (tmp_path / "TEXTE" / "EreigGold.saq").write_bytes(texts)
+    rels = ["TEXTE/EreigGold.saq", "TEXTE/EreigGld.saq"]
+    assert d.change(str(tmp_path), rels, d.events_101, hashes, "events", a2texts.plain_events)
+    for name in ("EreigGold.saq", "EreigGld.saq"):
+        result = (tmp_path / "TEXTE" / name).read_bytes()
+        assert a2texts.read_events(result)[3] == "Txet 3" and d.sha(a2texts.plain_events(result)) == hashes[1]
+    assert d.change(str(tmp_path), rels, d.events_101, hashes, "events", a2texts.plain_events)
+    assert "already applied" in capsys.readouterr().out
+    # 1.01 with the texts, the second name missing: copied, not built again from the backup
+    (tmp_path / "TEXTE" / "EreigGld.saq").unlink()
+    assert d.change(str(tmp_path), rels, d.events_101, hashes, "events", a2texts.plain_events)
+    assert a2texts.read_events((tmp_path / "TEXTE" / "EreigGld.saq").read_bytes())[3] == "Txet 3"
