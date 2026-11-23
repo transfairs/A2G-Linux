@@ -405,6 +405,21 @@ script:
         command: 'test "$INPUT_NAMES" != yes || python3 "$CACHE/a2g/src/a2texts.py" --cups --leagues --groups "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true
 
+    # Optional: the manager course quiz from A2G-Patch (src/a2quiz.py, see README): answers of today,
+    # 150 new questions, both or neither
+    - input_menu:
+        description: 'Quiz der Managerfortbildung auffrischen? Mit heutigen Antworten sind 77 Fragen auf dem Stand von 2026: Meistertitel, Rekorde und Regeln von heute, Fragen zu Ämtern und Personen von damals nennen ihr Jahr, und vier Antworten, die schon 1998 falsch waren, sind berichtigt. Dazu oder statt dessen kommen 150 neue Fragen von der WM 1998 bis zur WM 2026.'
+        id: QUIZ
+        options:
+          - original: Original beibehalten
+          - answers: Antworten auf heutigen Stand bringen
+          - both: Heutige Antworten und 150 neue Fragen
+          - new: Originalfragen und 150 neue Fragen
+        preselect: original
+    - execute:
+        command: 'test "$INPUT_QUIZ" = original || python3 "$CACHE/a2g/src/a2quiz.py" "$INPUT_QUIZ" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        disable_runtime: true
+
     # Editor and, optionally, A2G-Trainer: entries in the application menu, started in this prefix
     # (src/a2run.sh). Not a Lutris file, since those cannot be optional. Own slug anstoss-2-2007 for their
     # files, so they never replace the entries of an install.sh installation (anstoss-2-gold-2007).

@@ -27,6 +27,7 @@ import pytest
 
 import a2managerbuild
 import a2patch
+import a2quiz
 import a2texts
 from a2v101build import relocate
 
@@ -317,27 +318,45 @@ def check_texts(game, *scripts):
     assert text_files(game) == before
 
 
+def check_quiz(game):
+    """Both quiz switches fit the release's quiz; every way of the installer's page and back: the file as
+    before."""
+    path = Path(a2texts.GameFiles(str(game)).path(a2quiz.QUIZ_FILE))
+    before = path.read_bytes()
+    assert run("a2quiz.py", "status", game) == "Quizfragen: off\nNeue Quizfragen: off\n"
+    for mode in ("answers", "both", "new"):
+        run("a2quiz.py", mode, game)
+        wanted = "".join(f"{p.title}: {'on' if p.option in a2quiz.MODES[mode] else 'off'}\n" for p in a2quiz.PATCHES)
+        assert run("a2quiz.py", "status", game) == wanted
+    assert len(a2quiz.read(path.read_bytes())) == 633 + 150
+    run("a2quiz.py", "original", game)
+    assert path.read_bytes() == before
+
+
 def test_cd_texts(tmp_path):
     folder = env_path("A2G_CD_EXE").parent
-    for name in ("RESDLL.dll", "TEXTE/EreigGld.saq", "TEXTE/tips.txt"):
+    for name in ("RESDLL.dll", "TEXTE/EreigGld.saq", "TEXTE/tips.txt", "TEXTE/fort.saq"):
         source = Path(a2texts.GameFiles(str(folder)).path(name))
         if not source.is_file():
             pytest.skip(f"no {name} next to A2G_CD_EXE")
         (tmp_path / name).parent.mkdir(exist_ok=True)
         shutil.copyfile(source, tmp_path / name)
     check_texts(tmp_path)
+    check_quiz(tmp_path)
 
 
 def test_gog_texts(gog_game):
     run("a2data101.py", gog_game)
     run("a2resdll.py", gog_game)
     check_texts(gog_game, "a2data101.py", "a2resdll.py")
+    check_quiz(gog_game)
 
 
 def test_2007_cd_texts(dvd_exe):
     game = dvd_exe.parent
     run("a2data101.py", game, check=False)  # the DVD's LAENDER.SAV is not where GOG has it
     check_texts(game, "a2data101.py")
+    check_quiz(game)
 
 
 def cs_arguments(source, at):
@@ -388,3 +407,30 @@ def test_texts_are_a2g_patchs():
     patches = (patcher / "Patches.cs").read_text(encoding="utf-8")
     order = [m for m in re.findall(r"new (\w+)\(\)", patches) if m in a2texts.KEYS]
     assert tuple(dict.fromkeys(order)) == a2texts.KEYS
+
+
+CS_STRING = r'"(?:[^"\\]|\\.)*"'
+
+
+def cs_quiz_changes(source):
+    """The QuizChange calls of A2G-Patch's source, as a2quiz.py's changes (C# strings with their escapes)."""
+    changes = []
+    for m in re.finditer(rf"QuizChange\.(Answers|Question|Both|New)\(((?:\s*(?:\d+|{CS_STRING}),?)+)\s*\)", source):
+        args = [
+            int(a) if a.isdigit() else re.sub(r"\\(.)", r"\1", a[1:-1]) for a in re.findall(rf"\d+|{CS_STRING}", m[2])
+        ]
+        changes.append(getattr(a2quiz, m[1].lower())(*args))
+    return changes
+
+
+def test_quiz_is_a2g_patchs():
+    """The quiz switches' questions, order and titles are those of A2G-Patch's QuizPatches.cs and
+    QuizQuestions.cs."""
+    patcher = env_path("A2G_PATCHER")
+    source = (patcher / "QuizPatches.cs").read_text(encoding="utf-8")
+    answers = a2g_patch_class(source, "QuizAnswers")
+    new = (patcher / "QuizQuestions.cs").read_text(encoding="utf-8")
+    assert cs_quiz_changes(answers) == list(a2quiz.ANSWERS)
+    assert cs_quiz_changes(new) == list(a2quiz.NEW)
+    titles = [re.search(r'Title => "([^"]*)"', body)[1] for body in (answers, new)]
+    assert titles == [p.title for p in a2quiz.PATCHES]

@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 import a2patch
+import a2quiz
 import a2texts
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,7 +22,7 @@ VARIANTS = {
     "DVD": ("anstoss-2-gold-2007.yml", "run.exe"),
     "GOG": ("anstoss-2-gold-gog.yml", "run.exe"),
 }
-OTHER_QUESTIONS = ("ICON", "DATASET", "SAVES", "TRAINER")  # not patches
+OTHER_QUESTIONS = ("ICON", "DATASET", "SAVES", "QUIZ", "TRAINER")  # not patches
 
 
 def text(name):
@@ -136,6 +137,19 @@ def test_text_switches_are_asked_once_or_applied_every_time():
     asked = [k for keys in a2texts.QUESTIONS.values() for k in keys]
     every = asked + list(a2texts.ALWAYS + a2texts.COMMAND_LINE_ONLY)
     assert sorted(every) == sorted(p.option for p in a2texts.PATCHES) and len(set(every)) == len(every)
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_quiz_is_asked_after_the_text_questions(variant):
+    """One page with the four ways of a2quiz.py's switches, the original first."""
+    for script in (render(variant), lutris_script(variant)):
+        ids = [q[0] for q in questions(script)]
+        assert ids.index("QUIZ") == ids.index(list(a2texts.QUESTIONS)[-1]) + 1
+        _, _, options, preselect, command = questions(script)[ids.index("QUIZ")]
+        assert [next(iter(o)) for o in options] == list(a2quiz.MODES) and preselect == "original"
+        assert options[0] == {"original": "Original beibehalten"}
+        assert command.startswith('test "$INPUT_QUIZ" = original || python3 ')
+        assert command.endswith('/src/a2quiz.py" "$INPUT_QUIZ" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"')
 
 
 def test_balancing_questions_are_the_same_for_every_variant():
