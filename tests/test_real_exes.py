@@ -202,8 +202,9 @@ REWRITES = {
 
 
 def cs_hex(expression):
-    """The hex string of a C# expression of string literals, + and string.Concat(Enumerable.Repeat(..))."""
-    repeat = r'string\.Concat\(Enumerable\.Repeat\("(\w+)", (\d+)\)\)'
+    """The hex string of a C# expression of string literals, + and string.Concat(Enumerable.Repeat(..)),
+    also with .ToArray() (A2G-Patch's form for .NET Framework 2.0)."""
+    repeat = r'string\.Concat\(Enumerable\.Repeat\("(\w+)", (\d+)\)(?:\.ToArray\(\))?\)'
     expression = re.sub(repeat, lambda m: '"' + m[1] * int(m[2]) + '"', expression)
     return "".join(re.findall(r'"([0-9A-Fa-f?]*)"', expression)).upper()
 
