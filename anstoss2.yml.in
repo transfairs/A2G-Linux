@@ -265,7 +265,7 @@ script:
 # @END
 
     - execute:
-        command: 'cp "@PKG@/src/a2start.exe" "@PKG@"/build/a2wide2?.fnt "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/" && cp "@PKG@/src/gsfix.so" "$GAMEDIR/"'
+        command: 'cp "@PKG@/src/a2start.exe" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/" && cp "@PKG@/src/gsfix.so" "$GAMEDIR/"'
 
     # Bug fixes from A2G-Patch (--fixes, see README): sound on the default audio device, arrow buttons that
     # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space

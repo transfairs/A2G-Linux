@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Builds a bitmap font with double-width characters from MS Sans Serif (sserife.fon).
 
-Windows scales bitmap fonts by integer factors only. When Anstoss 2 requests 20 px height
-with 12 px width for the club names, Windows doubles the characters horizontally. Wine
-only widens the gaps instead. This font already contains double-width characters, so
-Wine draws it at natural size exactly as Windows does.
+No longer used by the game: it was meant for the club names in the 20 px font, but Windows 98
+draws them in MS Sans Serif's natural width, which a2start.exe now requests. It stays only for
+`a2assets.py fonts`, which the lutris.net scripts of v0.2.0 and older call (see there).
 
   mkwide.py sserife.fon <prefix>   creates <prefix>20.fnt and <prefix>24.fnt (the sizes the .fon has)
 """

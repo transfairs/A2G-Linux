@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Builds the wide font and collects the Lutris images at installation time, so the repository
+"""Collects the Lutris images at installation time, so the repository
 holds no third-party files.
 
     a2assets.py fonts <Wine fonts folder> <output folder>
@@ -9,8 +9,10 @@ holds no third-party files.
     a2assets.py icon-check
     a2assets.py icon <game|repo|file> <anstoss2.ico> <hicolor folder> <icon name> [<desktop.bmp>]
 
-fonts: writes a2wide20.fnt (mkwide.py, from Wine's MS Sans Serif) to <output folder>. All fonts of
-  the game are Wine's or Proton's.
+fonts: writes a2wide20.fnt (mkwide.py, from Wine's MS Sans Serif) to <output folder>. Only for the
+  lutris.net scripts of v0.2.0 and older, which download the latest release and copy this file next
+  to the game; a2start.exe no longer uses it (Windows 98 draws the club names in MS Sans Serif's
+  natural width). The scripts after v0.2.0 don't call it.
 media: banner and cover, cut out of the box art that AUTORUN.EXE on the CD shows.
 media-gog: banner and cover from the images GOG shows for the game (box art and logo), fetched from
   GOG's public product API. Without a connection, Lutris shows its default images.
@@ -62,7 +64,7 @@ def find(folder, name):
 
 
 def fonts(wine_fonts, out):
-    """Writes a2wide20.fnt to out, made from sserife.fon in wine_fonts; removes fonts of older versions."""
+    """Writes a2wide20.fnt to out, made from sserife.fon in wine_fonts, for the old lutris.net scripts."""
     shutil.rmtree(os.path.join(out, "fonts"), ignore_errors=True)  # left over from older versions
     os.makedirs(out, exist_ok=True)
     for old in glob.glob(os.path.join(out, "a2wide*.fnt")):

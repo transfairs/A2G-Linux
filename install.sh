@@ -21,10 +21,9 @@
 #         out of its copy protection shell (src/a2unpack.py), mounts the folder CD there as drive D:,
 #         converts the videos and applies patch 1.01 as for GOG. Own Lutris entry (slug
 #         anstoss-2-gold-2007, folder ~/Games/anstoss-2-gold-2007).
-# 3. Builds the wide font from Wine's MS Sans Serif and puts banner and cover (from the box art on
-#    the CD) into Lutris (src/a2assets.py). For GOG, banner and cover come from GOG's images of the
-#    game. It keeps the game's icon (build/anstoss2.ico) and checks whether the icon of the repository
-#    A2G-Icon can be fetched.
+# 3. Puts banner and cover (from the box art on the CD) into Lutris (src/a2assets.py). For GOG,
+#    banner and cover come from GOG's images of the game. It keeps the game's icon
+#    (build/anstoss2.ico) and checks whether the icon of the repository A2G-Icon can be fetched.
 #    Lutris then asks for the icon (the game's own, A2G-Icon's if it can be fetched, or own files; the
 #    last two also become the picture in the middle of the virtual desktop), optionally imports a data
 #    set and save games, applies the bug fixes (src/a2patch.py --fixes --interviews, src/a2texts.py
@@ -308,12 +307,6 @@ if [[ ! -f "$WINE_DIR/$PROTON/proton" ]]; then
   [[ -n "$d" ]] || die "$PROTON not found. Extract $PROTON-x86_64.tar.gz from https://github.com/GloriousEggroll/proton-ge-custom/releases to ~/.local/share/Steam/compatibilitytools.d/"
   mkdir -p "$WINE_DIR"; ln -sfn "$d" "$WINE_DIR/$PROTON"
 fi
-
-# --- Fonts --------------------------------------------------------------------
-# build/a2wide*.fnt goes next to the game (see README)
-WINE_FONTS="$WINE_DIR/$PROTON/files/share/wine/fonts"
-[[ -f "$WINE_FONTS/sserife.fon" ]] || die "$WINE_FONTS/sserife.fon not found"
-python3 "$PKG/src/a2assets.py" fonts "$WINE_FONTS" "$PKG/build" || die "could not build the wide font"
 
 # --- Generate and run the Lutris installer ----------------------------------
 YML="$PKG/$SLUG.yml"

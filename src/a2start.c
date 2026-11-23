@@ -25,7 +25,7 @@ struct version {
     DWORD anim_at, anim_call, iat_setwindowpos;
     DWORD drawdib_site[2], drawdib_thunk;
     DWORD avipal;
-    DWORD wide_at, wide_face, iat_getmodulehandle, iat_getprocaddress, wide_face_push[3];
+    DWORD menufont_at, menufont_face;          /* see detect */
     DWORD bits_site, iat_getbitmapbits, iat_getdibits, iat_getdc, iat_releasedc;
     DWORD calc_init;                           /* see patch_calcinit */
     DWORD btn_ctor_end, btn_vtable;            /* see patch_btninit */
@@ -38,7 +38,7 @@ static const struct version versions[] = {
       0x40a4c8, 0x66faf7, 0x677518,
       { 0x4675cc, 0x639a6d }, 0x6554da,
       0x418dc2,
-      0x573740, 0x6bece8, 0x677220, 0x677224, { 0x5738ee, 0x57391d, 0x5739a7 },
+      0x573740, 0x6bece8,
       0x419ee2, 0x6770b0, 0x6770f0, 0x6775f8, 0x6775e8,
       0x4a513f,
       0x5bc43a, 0x69ba78 },
@@ -48,7 +48,7 @@ static const struct version versions[] = {
       0x40a4c8, 0x674927, 0xcbaca0,
       { 0x4696cc, 0x63e5ad }, 0x65a30a,
       0x41a012,
-      0x5759f0, 0x6c1de8, 0xcba6f8, 0xcba6fc, { 0x575b9e, 0x575bcd, 0x575c57 },
+      0x5759f0, 0x6c1de8,
       0x41b132, 0xcba364, 0xcba3a4, 0xcbad80, 0xcbad70,
       0x4a733f,
       0x5bf16a, 0x6a0a78 },
@@ -58,7 +58,7 @@ static const struct version versions[] = {
       0x40a4c8, 0x674927, 0x67c518,
       { 0x4696cc, 0x63e5ad }, 0x65a30a,
       0x41a012,
-      0x5759f0, 0x6c1de8, 0x67c220, 0x67c224, { 0x575b9e, 0x575bcd, 0x575c57 },
+      0x5759f0, 0x6c1de8,
       0x41b132, 0x67c0b0, 0x67c0f0, 0x67c5f8, 0x67c5e8,
       0x4a733f,
       0x5bf16a, 0x6a0a78 },
@@ -70,9 +70,9 @@ static const struct version *detect(HANDLE proc) {
     for (size_t i = 0; i < sizeof versions / sizeof versions[0]; i++) {
         const struct version *v = &versions[i];
         BYTE want[6] = { 0x56, 0x68 }, cur[6], call[6] = { 0xff, 0x15 }; SIZE_T got;
-        memcpy(want + 2, &v->wide_face, 4);
+        memcpy(want + 2, &v->menufont_face, 4);
         memcpy(call + 2, &v->iat_getbitmapbits, 4);
-        if (ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)v->wide_at, cur, 6, &got) && got == 6 &&
+        if (ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)v->menufont_at, cur, 6, &got) && got == 6 &&
             memcmp(cur, want, 6) == 0 &&
             ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)v->bits_site, cur, 6, &got) && got == 6 &&
             memcmp(cur, call, 6) == 0)
@@ -99,7 +99,9 @@ static void patch_indeo(HANDLE proc, const struct version *v) {
    the list and table windows (0x5e8xxx, 0x60bxxx, 0x616xxx) create their own 10 px font.
    MS Sans Serif is a bitmap font. Wine stretches it continuously to the requested width
    (headings about a third wider, text gets cut off). The width is therefore set to 0
-   (natural width). The patched byte is the operand of "push <width>" before each call. */
+   (natural width), which is what Windows 98 draws, also for the club names in the 20 px fonts
+   (match announcement: "Sportfreunde Siegen" 147 px wide on Windows 98, 148 px under Wine).
+   The patched byte is the operand of "push <width>" before each call. */
 static void patch_fonts(HANDLE proc, const struct version *v) {
     /* want = original width, val = 0 (natural width) */
     /* original widths for v->font[]; each is set to 0 (natural width) */
@@ -236,98 +238,6 @@ static void patch_avipal(HANDLE proc, const struct version *v) {
     if (WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)at, &val, 1, &got) && got == 1) logf_("Video palette patch: applied", 1);
     else logf_("Video palette patch: write failed", (long)GetLastError());
     FlushInstructionCache(proc, NULL, 0);
-}
-
-/* Large fonts (club names, e.g. the match announcement): the game requests MS Sans Serif with 20 px
-   height and 12 px width (or 24/16). Windows scales bitmap fonts by integer factors only and doubles
-   the characters horizontally here. Wine only widens the gaps. Fix: the font "A2 Sans Serif Wide"
-   (a2wide20.fnt/a2wide24.fnt, generated from the original by mkwide.py) already contains
-   double-width characters. Wine does not load bitmap fonts from C:\windows\Fonts, so the game loads
-   them itself with AddFontResourceA: at the start of the function at 0x573740 (creates all menu fonts) it jumps
-   into injected code that loads both files. The three affected CreateFontA calls get the new face
-   name; patch_fonts has already set their width to 0 (natural). */
-static void patch_widefont(HANDLE proc, const struct version *v, const char *dir) {
-    const DWORD at = v->wide_at, back = at + 6, face_old = v->wide_face;
-    const DWORD iat_getmodulehandle = v->iat_getmodulehandle, iat_getprocaddress = v->iat_getprocaddress;
-    const DWORD *face_push = v->wide_face_push;                          /* 20 regular, 24 regular, 20 bold */
-    static const int face_size[] = { 0, 1, 0 };                          /* index into file[] */
-    BYTE want[6] = { 0x56, 0x68 };                                       /* push esi; push 0x6bece8 */
-    memcpy(want + 2, &face_old, 4);
-    /* a2wide24.fnt is missing when it was built from Wine's MS Sans Serif (no 24 px size); the
-       24 px font then keeps MS Sans Serif */
-    char file[2][MAX_PATH + 16]; int have[2], nhave = 0;
-    snprintf(file[0], sizeof file[0], "%s\\a2wide20.fnt", dir);
-    snprintf(file[1], sizeof file[1], "%s\\a2wide24.fnt", dir);
-    for (int i = 0; i < 2; i++) nhave += have[i] = GetFileAttributesA(file[i]) != INVALID_FILE_ATTRIBUTES;
-    if (!nhave) { logf_("Wide font patch: a2wide20.fnt/a2wide24.fnt missing, nothing changed", 0); return; }
-    BYTE cur[6]; SIZE_T got;
-    if (!ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)at, cur, 6, &got) || got != 6 || memcmp(cur, want, 6) != 0) {
-        logf_("Wide font patch: different program version, nothing changed", 0); return;
-    }
-    for (int i = 0; i < 3; i++) {
-        BYTE p[5];
-        if (!ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)face_push[i], p, 5, &got) || got != 5 ||
-            p[0] != 0x68 || memcmp(p + 1, &face_old, 4) != 0) {
-            logf_("Wide font patch: different program version, nothing changed", (long)face_push[i]); return;
-        }
-    }
-    LPVOID mem = VirtualAllocEx(proc, NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!mem || (ULONG_PTR)mem > 0xFFFF0000u) { logf_("Wide font patch: no memory", (long)GetLastError()); return; }
-    DWORD c = (DWORD)(ULONG_PTR)mem;
-    /* data from c+0x200 */
-    BYTE k[4096]; memset(k, 0, sizeof k);
-    const DWORD s_gdi = 0x200, s_proc = 0x210, s_face = 0x230, s_file[2] = { 0x250, 0x250 + 0x120 };
-    strcpy((char *)k + s_gdi, "gdi32.dll");
-    strcpy((char *)k + s_proc, "AddFontResourceA");
-    strcpy((char *)k + s_face, "A2 Sans Serif Wide");
-    for (int i = 0; i < 2; i++) strcpy((char *)k + s_file[i], file[i]);
-    int n = 0, j1, j2;
-#define B(x) k[n++] = (BYTE)(x)
-#define D(x) do { DWORD v_ = (DWORD)(x); memcpy(k + n, &v_, 4); n += 4; } while (0)
-    B(0x60);                                   /* pushad */
-    B(0x68); D(c + s_gdi);                     /* push "gdi32.dll" */
-    B(0xff); B(0x15); D(iat_getmodulehandle);  /* call [GetModuleHandleA] */
-    B(0x85); B(0xc0);                          /* test eax,eax */
-    B(0x74); j1 = n; B(0);                     /* jz done */
-    B(0x68); D(c + s_proc);                    /* push "AddFontResourceA" */
-    B(0x50);                                   /* push eax */
-    B(0xff); B(0x15); D(iat_getprocaddress);   /* call [GetProcAddress] */
-    B(0x85); B(0xc0);                          /* test eax,eax */
-    B(0x74); j2 = n; B(0);                     /* jz done */
-    B(0x8b); B(0xd8);                          /* mov ebx,eax */
-    for (int i = 0; i < 2; i++)
-        if (have[i]) {
-            B(0x68); D(c + s_file[i]);         /* push file */
-            B(0xff); B(0xd3);                  /* call ebx */
-        }
-    /* done: */
-    k[j1] = (BYTE)(n - (j1 + 1)); k[j2] = (BYTE)(n - (j2 + 1));
-    B(0x61);                                   /* popad */
-    B(0x56);                                   /* push esi        (original) */
-    B(0x68); D(face_old);                      /* push 0x6bece8   (original) */
-    B(0xe9); D(back - (c + n + 4));            /* jmp 0x573746 */
-#undef B
-#undef D
-    if (n > (int)s_gdi) { logf_("Wide font patch: code too long", n); return; }
-    BYTE jmp[6] = { 0xe9, 0,0,0,0, 0x90 };
-    DWORD rel = c - (at + 5); memcpy(jmp + 1, &rel, 4);
-    DWORD face_new = c + s_face;
-    if (!WriteProcessMemory(proc, mem, k, sizeof k, &got) || got != sizeof k) {
-        logf_("Wide font patch: write failed", (long)GetLastError()); return;
-    }
-    int faces = 0;
-    for (int i = 0; i < 3; i++) {
-        if (!have[face_size[i]]) continue;
-        if (!WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)(face_push[i] + 1), &face_new, 4, &got) || got != 4) {
-            logf_("Wide font patch: write failed", (long)GetLastError()); return;
-        }
-        faces++;
-    }
-    if (!WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)at, jmp, 6, &got) || got != 6) {
-        logf_("Wide font patch: write failed", (long)GetLastError()); return;
-    }
-    FlushInstructionCache(proc, NULL, 0);
-    logf_("Wide font patch: applied", faces);
 }
 
 /* Cup draw (club names on the sign in the video, ARCHIVES/MoveList.dat): the function at 0x419e10 draws the names
@@ -505,7 +415,6 @@ int main(void) {
         patch_anim(pi.hProcess, v);
         patch_drawdib(pi.hProcess, v);
         patch_avipal(pi.hProcess, v);
-        patch_widefont(pi.hProcess, v, dir);
         patch_bitmapbits(pi.hProcess, v);
         patch_calcinit(pi.hProcess, v);
         patch_btninit(pi.hProcess, v);

@@ -79,16 +79,12 @@ script:
         name: create_prefix
         prefix: $GAMEDIR
 
-    # gschemas, gsfix.so (built by the release workflow) and the wide font (from the MS Sans Serif
-    # of the Proton that umu fetched for the prefix) next to the game
+    # gschemas and gsfix.so (built by the release workflow) next to the game
     - execute:
         command: 'bash "$CACHE/a2g/install.sh" --make-schemas "$GAMEDIR/gschemas"'
         disable_runtime: true  # glib-compile-schemas with the system's libraries
     - execute:
         command: 'cp "$CACHE/a2g/src/gsfix.so" "$GAMEDIR/gsfix.so"'
-    - execute:
-        command: 'fonts=$(ls -d "$HOME"/.local/share/Steam/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "$HOME"/.steam/root/compatibilitytools.d/GE-Proton*/files/share/wine/fonts "${XDG_DATA_HOME:-$HOME/.local/share}"/lutris/runners/wine/GE-Proton*/files/share/wine/fonts 2>/dev/null | sort -V | tail -1) && test -f "$fonts/sserife.fon" && python3 "$CACHE/a2g/src/a2assets.py" fonts "$fonts" "$CACHE/a2g/build" || { echo "No sserife.fon of GE-Proton found"; exit 1; }'
-        disable_runtime: true
 
     # 96 DPI, no font smoothing
     - task:
@@ -246,7 +242,7 @@ script:
         type: REG_SZ
 
     - execute:
-        command: 'cp "$CACHE/a2g/src/a2start.exe" "$CACHE"/a2g/build/a2wide2?.fnt "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/"'
+        command: 'cp "$CACHE/a2g/src/a2start.exe" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/"'
 
     # Bug fixes from A2G-Patch (--fixes, see README): sound on the default audio device, arrow buttons that
     # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space
