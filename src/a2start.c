@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
+#include "a2mask.h"
 
 static void logf_(const char *msg, long v) {
     FILE *f = fopen("a2start.log", "a");
@@ -30,6 +31,9 @@ struct version {
     DWORD calc_init;                           /* see patch_calcinit */
     DWORD btn_ctor_end, btn_vtable;            /* see patch_btninit */
     DWORD depth_site;                          /* see patch_depth, 0: nothing to do */
+    /* import slots for patch_mask: BitBlt, CreateCompatibleDC, CreateDIBSection, SelectObject,
+       DeleteObject, DeleteDC, GetCurrentObject, GetObjectA */
+    DWORD iat_mask[8];
 };
 
 static const struct version versions[] = {
@@ -42,7 +46,8 @@ static const struct version versions[] = {
       0x573740, 0x6bece8,
       0x419ee2, 0x6770b0, 0x6770f0, 0x6775f8, 0x6775e8,
       0x4a513f,
-      0x5bc43a, 0x69ba78, 0 },
+      0x5bc43a, 0x69ba78, 0,
+      { 0x677080, 0x67707c, 0x6770a4, 0x677094, 0x677090, 0x677114, 0x677104, 0x677070 } },
     { "run.exe (GOG)", 0x6ae9e0,
       { 0x575a16, 0x575a45, 0x575a74, 0x575aa3, 0x575ad2, 0x575b01, 0x575b30, 0x575b5f, 0x575b8e,
         0x575bbd, 0x575bec, 0x575c1b, 0x575c76, 0x5ec5ee, 0x6102a6, 0x61b6b6 },
@@ -52,7 +57,8 @@ static const struct version versions[] = {
       0x5759f0, 0x6c1de8,
       0x41b132, 0xcba364, 0xcba3a4, 0xcbad80, 0xcbad70,
       0x4a733f,
-      0x5bf16a, 0x6a0a78, 0x40fd68 },
+      0x5bf16a, 0x6a0a78, 0x40fd68,
+      { 0xcba334, 0xcba330, 0xcba358, 0xcba348, 0xcba344, 0xcba3c8, 0xcba3b8, 0xcba324 } },
     { "run.exe (2007 CD)", 0x6ae9e0,
       { 0x575a16, 0x575a45, 0x575a74, 0x575aa3, 0x575ad2, 0x575b01, 0x575b30, 0x575b5f, 0x575b8e,
         0x575bbd, 0x575bec, 0x575c1b, 0x575c76, 0x5ec5ee, 0x6102a6, 0x61b6b6 },
@@ -62,7 +68,8 @@ static const struct version versions[] = {
       0x5759f0, 0x6c1de8,
       0x41b132, 0x67c0b0, 0x67c0f0, 0x67c5f8, 0x67c5e8,
       0x4a733f,
-      0x5bf16a, 0x6a0a78, 0 },
+      0x5bf16a, 0x6a0a78, 0,
+      { 0x67c080, 0x67c07c, 0x67c0a4, 0x67c094, 0x67c090, 0x67c114, 0x67c104, 0x67c070 } },
 };
 
 /* The build whose menu font function starts with "push esi; push <face name>" and which calls
@@ -396,6 +403,57 @@ static void patch_depth(HANDLE proc, const struct version *v) {
     FlushInstructionCache(proc, NULL, 0);
 }
 
+/* Masks of transparent pictures as on a 16-bit screen of Windows 98 (src/a2mask.S, see there): the
+   game makes them by copying a colour bitmap into a 1-bit one, black = transparent. Under Wine (and
+   Windows 10/11) the colour bitmaps keep 32 bit in the 16-bit mode, so the near-black edge the 3D
+   engine leaves around a rendered head stays opaque: the head of the manager in an interview stands
+   in a black box. The code goes in front of every BitBlt through the game's import slot. That slot
+   holds BitBlt only once the loader has run, so mask_prepare (process still suspended) copies the
+   code into the game and patch_mask (after ResumeThread) waits for the slot to change, keeps BitBlt
+   next to the code and points the slot at the code. */
+struct mask { DWORD code, orig, slot, unresolved; };
+
+static int mask_prepare(HANDLE proc, const struct version *v, struct mask *m) {
+    BYTE code[sizeof mask_code]; SIZE_T got;
+    memcpy(code, mask_code, sizeof code);
+    LPVOID mem = VirtualAllocEx(proc, NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!mem || (ULONG_PTR)mem > 0xFFFF0000u) { logf_("Mask patch: no memory", (long)GetLastError()); return 0; }
+    m->code = (DWORD)(ULONG_PTR)mem;
+    m->orig = m->code + ((sizeof code + 15) & ~15u);
+    m->slot = v->iat_mask[0];
+    /* placeholders of src/a2mask.S: 0x11111100 the slot with BitBlt itself, 0x11111102.. the imports */
+    int replaced = 0;
+    for (size_t i = 0; i + 4 <= sizeof code; i++) {
+        DWORD w, by; memcpy(&w, code + i, 4);
+        if ((w & 0xffffff00u) != 0x11111100u || (w & 0xff) > 8 || (w & 0xff) == 1) continue;
+        by = (w & 0xff) == 0 ? m->orig : v->iat_mask[(w & 0xff) - 1];
+        memcpy(code + i, &by, 4); i += 3; replaced++;
+    }
+    if (replaced != 11) { logf_("Mask patch: unexpected code, nothing changed", replaced); return 0; }
+    if (!WriteProcessMemory(proc, mem, code, sizeof code, &got) || got != sizeof code ||
+        !ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)m->slot, &m->unresolved, 4, &got) || got != 4) {
+        logf_("Mask patch: write failed", (long)GetLastError()); return 0;
+    }
+    FlushInstructionCache(proc, NULL, 0);
+    return 1;
+}
+
+static void patch_mask(HANDLE proc, const struct mask *m) {
+    DWORD real = m->unresolved, old; SIZE_T got;
+    for (int t = 0; t < 10000 && real == m->unresolved; t++) {
+        Sleep(1);
+        if (!ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)m->slot, &real, 4, &got) || got != 4) real = m->unresolved;
+    }
+    if (real == m->unresolved) { logf_("Mask patch: BitBlt not resolved, nothing changed", 0); return; }
+    if (!WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)m->orig, &real, 4, &got) || got != 4 ||
+        !VirtualProtectEx(proc, (LPVOID)(ULONG_PTR)m->slot, 4, PAGE_READWRITE, &old)) {
+        logf_("Mask patch: write failed", (long)GetLastError()); return;
+    }
+    BOOL ok = WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)m->slot, &m->code, 4, &got) && got == 4;
+    VirtualProtectEx(proc, (LPVOID)(ULONG_PTR)m->slot, 4, old, &old);
+    logf_(ok ? "Mask patch: applied" : "Mask patch: write failed", ok ? 1 : (long)GetLastError());
+}
+
 int main(void) {
     /* working directory = folder of a2start.exe (system32 otherwise when started via explorer /desktop) */
     char dir[MAX_PATH] = ".";
@@ -428,6 +486,7 @@ int main(void) {
         return 1;
     }
     const struct version *v = detect(pi.hProcess);
+    struct mask mask; int masked = 0;
     if (v) {
         FILE *f = fopen("a2start.log", "a");
         if (f) { fprintf(f, "Program version: %s\n", v->name); fclose(f); }
@@ -440,10 +499,12 @@ int main(void) {
         patch_calcinit(pi.hProcess, v);
         patch_btninit(pi.hProcess, v);
         patch_depth(pi.hProcess, v);
+        masked = mask_prepare(pi.hProcess, v, &mask);
     } else {
         logf_("Unknown program version, nothing changed", 0);
     }
     ResumeThread(pi.hThread);
+    if (masked) patch_mask(pi.hProcess, &mask);
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = 0; GetExitCodeProcess(pi.hProcess, &code);
     ChangeDisplaySettingsA(NULL, 0);
