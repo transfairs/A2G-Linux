@@ -29,6 +29,7 @@ struct version {
     DWORD bits_site, iat_getbitmapbits, iat_getdibits, iat_getdc, iat_releasedc;
     DWORD calc_init;                           /* see patch_calcinit */
     DWORD btn_ctor_end, btn_vtable;            /* see patch_btninit */
+    DWORD depth_site;                          /* see patch_depth, 0: nothing to do */
 };
 
 static const struct version versions[] = {
@@ -41,7 +42,7 @@ static const struct version versions[] = {
       0x573740, 0x6bece8,
       0x419ee2, 0x6770b0, 0x6770f0, 0x6775f8, 0x6775e8,
       0x4a513f,
-      0x5bc43a, 0x69ba78 },
+      0x5bc43a, 0x69ba78, 0 },
     { "run.exe (GOG)", 0x6ae9e0,
       { 0x575a16, 0x575a45, 0x575a74, 0x575aa3, 0x575ad2, 0x575b01, 0x575b30, 0x575b5f, 0x575b8e,
         0x575bbd, 0x575bec, 0x575c1b, 0x575c76, 0x5ec5ee, 0x6102a6, 0x61b6b6 },
@@ -51,7 +52,7 @@ static const struct version versions[] = {
       0x5759f0, 0x6c1de8,
       0x41b132, 0xcba364, 0xcba3a4, 0xcbad80, 0xcbad70,
       0x4a733f,
-      0x5bf16a, 0x6a0a78 },
+      0x5bf16a, 0x6a0a78, 0x40fd68 },
     { "run.exe (2007 CD)", 0x6ae9e0,
       { 0x575a16, 0x575a45, 0x575a74, 0x575aa3, 0x575ad2, 0x575b01, 0x575b30, 0x575b5f, 0x575b8e,
         0x575bbd, 0x575bec, 0x575c1b, 0x575c76, 0x5ec5ee, 0x6102a6, 0x61b6b6 },
@@ -61,7 +62,7 @@ static const struct version versions[] = {
       0x5759f0, 0x6c1de8,
       0x41b132, 0x67c0b0, 0x67c0f0, 0x67c5f8, 0x67c5e8,
       0x4a733f,
-      0x5bf16a, 0x6a0a78 },
+      0x5bf16a, 0x6a0a78, 0 },
 };
 
 /* The build whose menu font function starts with "push esi; push <face name>" and which calls
@@ -375,6 +376,26 @@ static void patch_btninit(HANDLE proc, const struct version *v) {
     logf_("Button patch: applied", 1);
 }
 
+/* Colour depth of the full screen mode (GOG only): the function at 0x40fd10 fills a DEVMODE for
+   ChangeDisplaySettings(CDS_FULLSCREEN) with 640x480 and, in GOG's run.exe, 32 bit per pixel
+   ("mov dword [esi+0x1b8],0x20" at 0x40fd68; 16 in the 1999 and 2007 releases). GOG's DirectDraw
+   wrapper ddraw.dll, which the installer leaves out, converts that. Proton keeps the 16 bit of
+   a2start.exe; plain Wine switches to 32 bit, the game's next DirectDraw primary surface then has 32
+   bit ("Bitcount 32 not supported") and the animations stay black. Fix: 16 as in the other releases. */
+static void patch_depth(HANDLE proc, const struct version *v) {
+    if (!v->depth_site) return;
+    const BYTE want[10] = { 0xc7, 0x86, 0xb8, 0x01, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00 };
+    BYTE cur[10], val = 0x10; SIZE_T got;
+    if (!ReadProcessMemory(proc, (LPVOID)(ULONG_PTR)v->depth_site, cur, 10, &got) || got != 10 ||
+        memcmp(cur, want, 10) != 0) {
+        logf_("Depth patch: different program version, nothing changed", 0); return;
+    }
+    if (WriteProcessMemory(proc, (LPVOID)(ULONG_PTR)(v->depth_site + 6), &val, 1, &got) && got == 1)
+        logf_("Depth patch: applied", 1);
+    else logf_("Depth patch: write failed", (long)GetLastError());
+    FlushInstructionCache(proc, NULL, 0);
+}
+
 int main(void) {
     /* working directory = folder of a2start.exe (system32 otherwise when started via explorer /desktop) */
     char dir[MAX_PATH] = ".";
@@ -418,6 +439,7 @@ int main(void) {
         patch_bitmapbits(pi.hProcess, v);
         patch_calcinit(pi.hProcess, v);
         patch_btninit(pi.hProcess, v);
+        patch_depth(pi.hProcess, v);
     } else {
         logf_("Unknown program version, nothing changed", 0);
     }

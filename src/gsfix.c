@@ -85,7 +85,10 @@ __attribute__((constructor)) static void init(void) {
     exe[n] = 0;
     const char *base = strrchr(exe, '/');
     base = base ? base + 1 : exe;
-    if (strcmp(base, "gamescope") != 0) return;
+    /* the Flatpak extension org.freedesktop.Platform.VulkanLayer.gamescope (Lutris' Flatpak) runs it
+       as gamescope-brokey; without the match there, LD_PRELOAD stays and reaches Wine, where it made
+       plain Wine hang before the game started */
+    if (strcmp(base, "gamescope") != 0 && strcmp(base, "gamescope-brokey") != 0) return;
     active = 1;
     opt_title = getenv("GSFIX_TITLE");
     opt_appid = resolve_appid(getenv("GSFIX_APPID"));
