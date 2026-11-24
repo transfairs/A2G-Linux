@@ -1,8 +1,8 @@
 name: Tests
 
-# Runs tox (tests, lint, bandit, coverage, build of the helper programs) on every push and pull
-# request, and for every release tag before the release workflow publishes. The tests use synthetic
-# data only; no files of the game are needed.
+# Runs tox (tests, lint, bandit, coverage, build of the helper programs) and the builds of the
+# release's own programs on every push and pull request, and for every release tag before the
+# release workflow publishes. The tests use synthetic data only; no files of the game are needed.
 on:
   push:
     branches:
@@ -44,3 +44,23 @@ jobs:
       # As in the release workflow, with the older headers and glibc of Ubuntu 22.04
       - name: Build gsfix.so for the release
         run: .github/build-gsfix.sh "$RUNNER_TEMP/gsfix.so"
+
+      - name: Build ffmpeg.exe for the release
+        run: .github/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg.exe"
+
+  # src/a2patcher.exe as the release workflow builds it, so a build error shows up before a release
+  patcher:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build a2patcher.exe
+        shell: bash
+        run: .github/build-patcher.sh "$RUNNER_TEMP/a2patcher.exe"

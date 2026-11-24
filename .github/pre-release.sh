@@ -121,15 +121,18 @@ git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' 
   [[ -e "$f" ]] && cp --parents "$f" "$out/"
 done
 [[ -f "$tmp/gsfix.so" ]] && cp "$tmp/gsfix.so" "$out/src/gsfix.so"
+built() {  # files the release workflow builds into the archive, not in the repository
+  [[ "$1" == src/gsfix.so || "$1" == src/a2patcher.exe || "$1" == src/ffmpeg.exe ]]
+}
 needed() {  # the paths a lutris.net script uses inside the archive ($CACHE/a2g/...), build/ is made there
   # shellcheck disable=SC2016  # $CACHE is the literal text in the scripts
   grep -o '\$CACHE/a2g/[A-Za-z0-9_./-]*' "$@" | sed 's|.*\$CACHE/a2g/||' | grep -v '^build' | sort -u
 }
 missing=""
 for f in $(needed lutris.net/*.yml); do
-  [[ -e "$out/$f" || "$f" == src/gsfix.so ]] || missing+=" $f"
+  [[ -e "$out/$f" ]] || built "$f" || missing+=" $f"
 done
-for f in src/a2start.exe src/a2setup.exe src/a2v101.json src/a2manager.json; do [[ -e "$out/$f" ]] || missing+=" $f"; done
+for f in src/a2start.exe src/a2setup.exe src/a2v101.json src/a2manager.json src/a2patcher.py; do [[ -e "$out/$f" ]] || missing+=" $f"; done
 if [[ -n "$missing" ]]; then
   report FAIL "release archive" "missing:$missing"
 else
@@ -145,7 +148,7 @@ else
   for f in $(git ls-tree --name-only "$last_tag" lutris.net/ | grep '\.yml$'); do
     git show "$last_tag:$f" > "$tmp/old.yml"
     for p in $(needed "$tmp/old.yml"); do
-      [[ -e "$out/$p" || "$p" == src/gsfix.so ]] || problems+=" $f: $p missing;"
+      [[ -e "$out/$p" ]] || built "$p" || problems+=" $f: $p missing;"
     done
     while read -r o; do
       grep -q -- "$o" <<< "$options" || problems+=" $f: a2patch.py $o gone;"

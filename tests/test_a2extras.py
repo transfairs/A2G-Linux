@@ -37,16 +37,17 @@ def test_refresh_icon_cache_without_folder(tmp_path):
     run.assert_not_called()
 
 
-def test_every_installer_uses_a_known_slug():
+def test_lutris_net_scripts_leave_the_extras_out():
+    """The lutris.net scripts install no menu entries (they would go to the home folder); the slugs of
+    those of earlier releases stay known, since these load the newest release archive."""
     import glob
-    import re
 
     root = os.path.join(os.path.dirname(__file__), "..")
-    slugs = set()
-    for f in glob.glob(os.path.join(root, "lutris.net", "*.yml")):
-        slugs.update(re.findall(r"a2extras\.py\" --slug (\S+)", open(f).read()))
-    assert slugs == {"anstoss-2-cd", "anstoss-2-2007", "anstoss-2-gog"}
-    assert slugs <= set(a2extras.SUFFIXES)
+    scripts = glob.glob(os.path.join(root, "lutris.net", "anstoss-2-gold*.yml"))
+    assert len(scripts) == 3
+    for f in scripts:
+        assert "a2extras.py" not in open(f).read()
+    assert {"anstoss-2-cd", "anstoss-2-2007", "anstoss-2-gog"} <= set(a2extras.SUFFIXES)
 
 
 # Synthetic PE files

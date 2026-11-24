@@ -6,8 +6,9 @@
 
 - copies a2run.sh into the prefix folder (with the slug for the menu entries, default
   anstoss-2-gold; install.sh uses the Lutris slug: anstoss-2-gold-gog for GOG,
-  anstoss-2-gold-2007 for the 2007 CD; the lutris.net scripts use anstoss-2-cd, anstoss-2-2007
-  and anstoss-2-gog, so every installation gets its own menu entries)
+  anstoss-2-gold-2007 for the 2007 CD; the lutris.net scripts of releases before the Flatpak
+  versions used anstoss-2-cd, anstoss-2-2007 and anstoss-2-gog, so every installation got its own
+  menu entries)
 - trainer "download": fetches the latest release zip from GitHub; "file": a zip or exe given as
   third argument or chosen in a dialog; A2G-Trainer.exe goes to C:\\Spiele\\A2G-Trainer
 - installs the editor's icon, a football drawn for A2G-Linux (src/editor-icon.svg and .png), and

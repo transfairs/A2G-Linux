@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 import a2patch
+import a2patcher
 import a2quiz
 import a2texts
 
@@ -22,7 +23,10 @@ VARIANTS = {
     "DVD": ("anstoss-2-gold-2007.yml", "run.exe"),
     "GOG": ("anstoss-2-gold-gog.yml", "run.exe"),
 }
+# variant of anstoss2.yml.in, of src/a2patcher.py
+PATCHER = {"CD": "cd", "DVD": "2007", "GOG": "gog"}
 OTHER_QUESTIONS = ("ICON", "DATASET", "SAVES", "QUIZ", "TRAINER")  # not patches
+HOST_ONLY = ("ICON", "DATASET", "SAVES", "TRAINER")  # need the system's programs: install.sh only
 
 
 def text(name):
@@ -73,6 +77,14 @@ def lutris_script(variant):
     return text("lutris.net/" + VARIANTS[variant][0])
 
 
+def patcher_step(variant):
+    """The wineexec step of a lutris.net script that runs src/a2patcher.exe."""
+    found = [v for kind, v in steps(lutris_script(variant)) if kind == "task" and v["name"] == "wineexec"]
+    found = [v for v in found if v["executable"] == "$CACHE/a2g/src/a2patcher.exe"]
+    assert len(found) == 1
+    return found[0]
+
+
 def balancing_questions(script):
     return [q for q in questions(script) if q[0] not in OTHER_QUESTIONS + tuple(a2texts.QUESTIONS)]
 
@@ -99,16 +111,45 @@ def test_balancing_questions_in_order(variant):
         assert [q[0] for q in found] == [k.upper() for k in a2patch.BALANCING]
         for key, _, options, preselect, command in found:
             assert preselect == "no" and options[0] == {"no": "Original beibehalten"} and "yes" in options[1]
-            assert f'test "$INPUT_{key}" != yes || python3 ' in command
-            assert f'/src/a2patch.py" --{key.lower()} "' in command
-            assert command.endswith(f'/{VARIANTS[variant][1]}"')
+    for key, _, _, _, command in balancing_questions(render(variant)):
+        assert f'test "$INPUT_{key}" != yes || python3 ' in command
+        assert f'/src/a2patch.py" --{key.lower()} "' in command
+        assert command.endswith(f'/{VARIANTS[variant][1]}"')
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
 def test_lutris_script_asks_what_install_sh_asks(variant):
-    ours = [q[:4] for q in questions(render(variant))]
+    """The same pages, except those that need the system's programs."""
+    ours = [q[:4] for q in questions(render(variant)) if q[0] not in HOST_ONLY]
     theirs = [q[:4] for q in questions(lutris_script(variant))]
     assert ours == theirs
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_lutris_script_hands_every_answer_to_the_patcher(variant):
+    """One wineexec of src/a2patcher.exe after the last question, with the variant, the source and each
+    answer as --<id> $INPUT_<ID>; the patcher knows exactly these questions and answers."""
+    s = steps(lutris_script(variant))
+    step = patcher_step(variant)
+    assert s[-1] == ("task", step)
+    asked = questions(lutris_script(variant))
+    assert list(a2patcher.QUESTIONS) == [q[0] for q in asked]
+    for key, _, options, preselect, _ in asked:
+        assert a2patcher.QUESTIONS[key] == tuple(next(iter(o)) for o in options)
+        assert preselect == a2patcher.QUESTIONS[key][0]
+    source = {"CD": '"$DISC"', "DVD": '"$CACHE/dvd"', "GOG": '"$CACHE/gog"'}[variant]
+    args = " ".join(f"--{q[0].lower()} $INPUT_{q[0]}" for q in asked)
+    assert step["args"] == f"{PATCHER[variant]} {source} {args}"
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_lutris_script_runs_in_lutris_flatpak(variant):
+    """lutris.net's rules: Lutris' own steps only, no commands of the system, nothing in the home folder."""
+    script = yaml.safe_load(lutris_script(variant))["script"]
+    assert "require-binaries" not in script
+    kinds = {kind for kind, _ in steps(lutris_script(variant))}
+    assert kinds <= {"extract", "insert-disc", "task", "merge", "input_menu"}
+    assert not re.search(r"\$HOME|XDG_|disable_runtime|python3|bash ", lutris_script(variant))
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
@@ -122,15 +163,17 @@ def test_text_questions_follow_the_balancing_patches(variant):
         assert ids[first : first + len(a2texts.QUESTIONS)] == list(a2texts.QUESTIONS)
         for key, _, options, preselect, command in text_questions(script):
             assert preselect == "no" and options[0] == {"no": "Original beibehalten"} and "yes" in options[1]
-            switches = " ".join(option(k) for k in a2texts.QUESTIONS[key])
-            assert command.startswith(f'test "$INPUT_{key}" != yes || python3 ')
-            assert command.endswith(f'/src/a2texts.py" {switches} {game}')
-        commands = [v.get("command", "") for kind, v in steps(script) if kind == "execute"]
-        always = [i for i, c in enumerate(commands) if c.endswith(f'/src/a2texts.py" --typos {game}')]
-        assert len(always) == 1 and all("a2texts.py" not in c for c in commands[: always[0]])
-        assert all(always[0] > i for i, c in enumerate(commands) if "a2data101.py" in c or "a2resdll.py" in c)
-        assert all(always[0] > i for i, c in enumerate(commands) if "a2import.py" in c)
-        assert not any("--contracts" in c for c in commands)
+    script = render(variant)
+    for key, _, options, preselect, command in text_questions(script):
+        switches = " ".join(option(k) for k in a2texts.QUESTIONS[key])
+        assert command.startswith(f'test "$INPUT_{key}" != yes || python3 ')
+        assert command.endswith(f'/src/a2texts.py" {switches} {game}')
+    commands = [v.get("command", "") for kind, v in steps(script) if kind == "execute"]
+    always = [i for i, c in enumerate(commands) if c.endswith(f'/src/a2texts.py" --typos {game}')]
+    assert len(always) == 1 and all("a2texts.py" not in c for c in commands[: always[0]])
+    assert all(always[0] > i for i, c in enumerate(commands) if "a2data101.py" in c or "a2resdll.py" in c)
+    assert all(always[0] > i for i, c in enumerate(commands) if "a2import.py" in c)
+    assert not any("--contracts" in c for c in commands)
 
 
 def test_text_switches_are_asked_once_or_applied_every_time():
@@ -148,8 +191,9 @@ def test_quiz_is_asked_after_the_text_questions(variant):
         _, _, options, preselect, command = questions(script)[ids.index("QUIZ")]
         assert [next(iter(o)) for o in options] == list(a2quiz.MODES) and preselect == "original"
         assert options[0] == {"original": "Original beibehalten"}
-        assert command.startswith('test "$INPUT_QUIZ" = original || python3 ')
-        assert command.endswith('/src/a2quiz.py" "$INPUT_QUIZ" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"')
+    command = next(q[4] for q in questions(render(variant)) if q[0] == "QUIZ")
+    assert command.startswith('test "$INPUT_QUIZ" = original || python3 ')
+    assert command.endswith('/src/a2quiz.py" "$INPUT_QUIZ" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"')
 
 
 def test_balancing_questions_are_the_same_for_every_variant():
@@ -161,13 +205,15 @@ def test_balancing_questions_are_the_same_for_every_variant():
 def test_fixes_applied_on_every_install(variant):
     fixes = install_sh_fixes()[variant]
     assert fixes == ("" if variant == "CD" else "--disc-check --v101")
-    for script in (render(variant), lutris_script(variant)):
-        commands = [v.get("command", "") for kind, v in steps(script) if kind == "execute"]
-        wanted = (
-            " ".join(["--fixes"] + ["--" + k for k in a2patch.ALWAYS] + fixes.split())
-            + f' "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/{VARIANTS[variant][1]}"'
-        )
-        assert sum(c.endswith('/src/a2patch.py" ' + wanted) for c in commands) == 1
+    commands = [v.get("command", "") for kind, v in steps(render(variant)) if kind == "execute"]
+    wanted = (
+        " ".join(["--fixes"] + ["--" + k for k in a2patch.ALWAYS] + fixes.split())
+        + f' "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/{VARIANTS[variant][1]}"'
+    )
+    assert sum(c.endswith('/src/a2patch.py" ' + wanted) for c in commands) == 1
+    # the lutris.net script: src/a2patcher.py, with the same exe and switches (tests/test_a2patcher.py)
+    assert a2patcher.FIXES[PATCHER[variant]] == fixes.split()
+    assert a2patcher.EXE[PATCHER[variant]] == VARIANTS[variant][1]
 
 
 def test_fixes_and_balancing_are_all_code_patches():
@@ -216,21 +262,19 @@ def test_project_page_links_lead_somewhere():
 
 @pytest.mark.parametrize("variant", VARIANTS)
 def test_icon_is_asked_with_the_games_icon_as_default(variant):
-    """The installers ask for the icon before the other questions, the game's own preselected, and
-    install it with a2assets.py icon under Lutris' name for the game, given the game's icon to fall
-    back on; install.sh drops A2G-Icon from the choice if it can't fetch it."""
+    """install.sh's installer asks for the icon before the other questions, the game's own preselected,
+    and installs it with a2assets.py icon under Lutris' name for the game, given the game's icon to fall
+    back on; install.sh drops A2G-Icon from the choice if it can't fetch it. The lutris.net scripts
+    don't ask: the icon would go to the home folder, lutris.net's game page brings it instead."""
     assert not list((ROOT / "src").glob("anstoss2-icon.*"))  # kept in the repository A2G-Icon
-    for script, name in (
-        (render(variant), r'"lutris_\w[\w-]*"'),
-        (lutris_script(variant), "lutris_anstoss-2-gold-edition"),
-    ):
-        first = questions(script)[0]
-        assert first[0] == "ICON" and first[3] == "game"
-        assert [next(iter(o)) for o in first[2]] == ["game", "repo", "file"]
-        desktop = r'"\$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop\.bmp"'
-        assert re.search(
-            r'a2assets\.py" icon "\$INPUT_ICON" "[^"]+" "[^"]*/icons/hicolor" ' + name + " " + desktop, first[4]
-        )
+    first = questions(render(variant))[0]
+    assert first[0] == "ICON" and first[3] == "game"
+    assert [next(iter(o)) for o in first[2]] == ["game", "repo", "file"]
+    desktop = r'"\$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop\.bmp"'
+    assert re.search(
+        r'a2assets\.py" icon "\$INPUT_ICON" "[^"]+" "[^"]*/icons/hicolor" "lutris_\w[\w-]*" ' + desktop, first[4]
+    )
+    assert "ICON" not in [q[0] for q in questions(lutris_script(variant))]
     without = questions(render(variant, icon_repo=False))[0]
     assert without[0] == "ICON" and [next(iter(o)) for o in without[2]] == ["game", "file"]
     install = text("install.sh")
