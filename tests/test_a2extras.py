@@ -345,7 +345,9 @@ def setup(tmp_path, monkeypatch):
     """A prefix, a fake a2run.sh and editor icon next to the script and DATA in tmp_path."""
     here = tmp_path / "src"
     here.mkdir()
-    (here / "a2run.sh").write_text("#!/bin/sh\nSLUG=anstoss-2-gold  # set by a2extras.py\necho $SLUG\n")
+    (here / "a2run.sh").write_text(
+        "#!/bin/sh\nSLUG=anstoss-2-gold  # set by a2extras.py\nFLATPAK=0  # too\necho $SLUG\n"
+    )
     (here / "editor-icon.png").write_bytes(b"editor png")
     (here / "editor-icon.svg").write_text("<svg/>")
     monkeypatch.setattr(a2extras, "HERE", str(here))
@@ -379,7 +381,7 @@ def test_main_installs_editor_and_trainer(setup, monkeypatch, tmp_path, capsys):
     run_main(monkeypatch, "--slug", "anstoss-2-gold-gog", setup.prefix, "file", trainer)
 
     run = setup.prefix / "a2run.sh"
-    assert run.read_text() == "#!/bin/sh\nSLUG=anstoss-2-gold-gog  # set by a2extras.py\necho $SLUG\n"
+    assert run.read_text() == "#!/bin/sh\nSLUG=anstoss-2-gold-gog  # set by a2extras.py\nFLATPAK=0  # too\necho $SLUG\n"
     assert os.stat(run).st_mode & 0o777 == 0o755
     assert (
         setup.prefix / "drive_c" / "Spiele" / "A2G-Trainer" / "A2G-Trainer.exe"
@@ -424,6 +426,11 @@ def test_main_without_trainer_removes_an_old_entry(setup, monkeypatch, capsys, s
     assert out.count("Removed:") == 1
 
 
+def test_main_flatpak(setup, monkeypatch):
+    run_main(monkeypatch, "--slug", "anstoss-2-gold", "--flatpak", setup.prefix, "none")
+    assert "FLATPAK=1  # too\n" in (setup.prefix / "a2run.sh").read_text()
+
+
 def test_main_with_cancelled_file_dialog(setup, monkeypatch, capsys):
     with mock.patch.object(a2extras, "pick", return_value=""):
         run_main(monkeypatch, setup.prefix, "file")
@@ -437,12 +444,12 @@ def test_main_usage(monkeypatch, args):
     monkeypatch.setattr(sys, "argv", ["a2extras.py"] + args)
     with pytest.raises(SystemExit) as e:
         a2extras.main()
-    assert e.value.code == "a2extras.py [--slug SLUG] <prefix folder> none|download|file [zip or exe]"
+    assert e.value.code == "a2extras.py [--slug SLUG] [--flatpak] <prefix folder> none|download|file [zip or exe]"
 
 
 def test_main_needs_the_slug_line(setup, monkeypatch):
     (setup.prefix.parent / "src" / "a2run.sh").write_text("#!/bin/sh\nSLUG=other\n")
-    with pytest.raises(SystemExit, match="SLUG line missing"):
+    with pytest.raises(SystemExit, match="SLUG or FLATPAK line missing"):
         run_main(monkeypatch, setup.prefix, "none")
     assert not (setup.prefix / "a2run.sh").exists()
 

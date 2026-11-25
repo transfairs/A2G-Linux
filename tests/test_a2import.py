@@ -135,3 +135,32 @@ def test_run_as_script(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as e:
         runpy.run_path(imp.__file__, run_name="__main__")
     assert e.value.code == 2
+
+
+def test_merge_only_saves(tmp_path):
+    src, game = tmp_path / "src", tmp_path / "game"
+    tree(
+        src,
+        {
+            "Karriere.GLD": "g",
+            "alt.ver": "v",
+            "4-4-2.syt": "s",
+            "Woche.woc": "w",
+            "readme.txt": "t",
+            "DATA.VER/X.SAV": "d",
+            "sub/b.gld": "b",
+        },
+    )
+    game.mkdir()
+    counts = {"added": 0, "replaced": 0, "kept": 0}
+    imp.merge(str(src), str(game), False, counts, imp.SAVES)
+    assert counts == {"added": 5, "replaced": 0, "kept": 0}
+    assert sorted(p.name for p in game.iterdir()) == ["4-4-2.syt", "Karriere.GLD", "Woche.woc", "alt.ver", "sub"]
+
+
+def test_main_saves(tmp_path, monkeypatch):
+    src, game = tmp_path / "src", tmp_path / "game"
+    tree(src, {"a.gld": "x", "b.txt": "x"})
+    game.mkdir()
+    run_main(monkeypatch, "--saves", "dir", game, src)
+    assert sorted(p.name for p in game.iterdir()) == ["a.gld"]

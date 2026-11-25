@@ -35,6 +35,13 @@ script:
     working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
     args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" run.exe /f
     prefix: $GAMEDIR
+    # Another program Lutris offers when the game is started: the editor, like the game in the
+    # 640x480 Wine desktop through a2start.exe
+    launch_configs:
+      - name: Anstoss 2 Editor
+        exe: $GAMEDIR/drive_c/windows/explorer.exe
+        working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
+        args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" Editor.exe
     # GOG product ID of "Anstoss 2 Gold Edition", for the download of goginstaller
     gogid: 1808817480
 
@@ -239,8 +246,28 @@ script:
         value: DEU
         type: REG_SZ
 
-    # The questions, all before the work starts. Optional balancing patches from A2G-Patch, one page
-    # each (see README)
+    # The questions, all before the work starts. Optional: a data set (overwrites the game's files) and
+    # save games (*.gld, *.ver of verl.exe, with the game systems *.syt and training weeks *.woc;
+    # existing ones are kept), each picked later in Windows' file dialog of the patcher below
+    - input_menu:
+        description: 'Einen Anstoss-2-Datensatz in den Spielordner importieren?'
+        id: DATASET
+        options:
+          - none: Nicht importieren
+          - zip: Aus einer Zip-Datei
+          - dir: Aus einem Ordner
+        preselect: none
+
+    - input_menu:
+        description: 'Spielstände in den Spielordner importieren (*.gld, *.ver der Verlängerung, mit Spielsystemen *.syt und Trainingswochen *.woc)?'
+        id: SAVES
+        options:
+          - none: Nicht importieren
+          - dir: Aus einem Ordner
+          - zip: Aus einer Zip-Datei
+        preselect: none
+
+    # Optional balancing patches from A2G-Patch, one page each (see README)
     - input_menu:
         description: 'Verhandlungssperre monatlich abbauen? Nach drei Verhandlungsterminen mit Spielern eines Vereins gibt dieser keine Spieler mehr ab. Das Spiel will diese Sperre jeden Monat halbieren, erwischt wegen eines Fehlers aber die falschen Bytes, sodass sie bis zur nächsten Saison hält. Der Patch lässt sie wie vorgesehen abbauen.'
         id: NEGOTIATION
@@ -318,4 +345,4 @@ script:
         name: wineexec
         prefix: $GAMEDIR
         executable: $CACHE/a2g/src/a2patcher.exe
-        args: 'gog "$CACHE/gog" --negotiation $INPUT_NEGOTIATION --goals $INPUT_GOALS --speeches $INPUT_SPEECHES --coaches $INPUT_COACHES --euro $INPUT_EURO --centreback $INPUT_CENTREBACK --names $INPUT_NAMES --quiz $INPUT_QUIZ'
+        args: 'gog "$CACHE/gog" --dataset $INPUT_DATASET --saves $INPUT_SAVES --negotiation $INPUT_NEGOTIATION --goals $INPUT_GOALS --speeches $INPUT_SPEECHES --coaches $INPUT_COACHES --euro $INPUT_EURO --centreback $INPUT_CENTREBACK --names $INPUT_NAMES --quiz $INPUT_QUIZ'

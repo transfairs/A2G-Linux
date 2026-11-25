@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Sets up the Anstoss 2 editor and, optionally, A2G-Trainer next to the game.
 
-    a2extras.py [--slug SLUG] <prefix folder> none|download|file [zip or exe]
+    a2extras.py [--slug SLUG] [--flatpak] <prefix folder> none|download|file [zip or exe]
 
 - copies a2run.sh into the prefix folder (with the slug for the menu entries, default
   anstoss-2-gold; install.sh uses the Lutris slug: anstoss-2-gold-gog for GOG,
   anstoss-2-gold-2007 for the 2007 CD; the lutris.net scripts of releases before the Flatpak
   versions used anstoss-2-cd, anstoss-2-2007 and anstoss-2-gog, so every installation got its own
-  menu entries)
+  menu entries); with --flatpak (game installed with Lutris' Flatpak), a2run.sh starts the editor
+  and the trainer inside the Flatpak, where the game's wineserver runs
 - trainer "download": fetches the latest release zip from GitHub; "file": a zip or exe given as
   third argument or chosen in a dialog; A2G-Trainer.exe goes to C:\\Spiele\\A2G-Trainer
 - installs the editor's icon, a football drawn for A2G-Linux (src/editor-icon.svg and .png), and
@@ -239,6 +240,9 @@ def main():
     slug = "anstoss-2-gold"
     if args[:1] == ["--slug"] and len(args) > 1:
         slug, args = args[1], args[2:]
+    flatpak = args[:1] == ["--flatpak"]
+    if flatpak:
+        args = args[1:]
     if len(args) not in (2, 3) or args[1] not in ("none", "download", "file"):
         sys.exit(__doc__.strip().splitlines()[2].strip())
     gamedir, mode = args[0], args[1]
@@ -247,11 +251,11 @@ def main():
     run = os.path.join(gamedir, "a2run.sh")
     with open(os.path.join(HERE, "a2run.sh")) as f:
         script = f.read()
-    marker = "SLUG=anstoss-2-gold  #"
-    if marker not in script:
-        sys.exit("a2run.sh: SLUG line missing")
+    marker, flag = "SLUG=anstoss-2-gold  #", "FLATPAK=0  #"
+    if marker not in script or flag not in script:
+        sys.exit("a2run.sh: SLUG or FLATPAK line missing")
     with open(run, "w") as f:
-        f.write(script.replace(marker, f"SLUG={slug}  #", 1))
+        f.write(script.replace(marker, f"SLUG={slug}  #", 1).replace(flag, f"FLATPAK={int(flatpak)}  #", 1))
     # The start script must be executable
     os.chmod(run, 0o755)  # nosec B103
 

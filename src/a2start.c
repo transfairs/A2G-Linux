@@ -5,7 +5,7 @@
    The game is started suspended and patched in memory to work around Wine differences
    (see the patch_* functions). The .exe file on disk stays unchanged. Two builds of the game are
    known: anstoss2.exe of the 1999 CD and run.exe of the 2007 release, the same code at different
-   addresses (struct version); run.exe of GOG and of the 2007 CD (unpacked by src/a2unpack.py)
+   addresses (struct version), and verl.exe ("ANSTOSS 2: Verlängerung!") of the 1999 CD; run.exe of GOG and of the 2007 CD (unpacked by src/a2unpack.py)
    differ only in the addresses of their import slots. Each patch first checks that the bytes match
    exactly; results are written to a2start.log. Addresses in the comments are those of the CD version. */
 #include <windows.h>
@@ -70,6 +70,18 @@ static const struct version versions[] = {
       0x4a733f,
       0x5bf16a, 0x6a0a78, 0,
       { 0x67c080, 0x67c07c, 0x67c0a4, 0x67c094, 0x67c090, 0x67c114, 0x67c104, 0x67c070 } },
+    /* "ANSTOSS 2: Verlängerung!" of the 1999 CD (continues save games of the earlier release) */
+    { "verl.exe (CD, 02.07.1999)", 0x692810,
+      { 0x562b36, 0x562b65, 0x562b94, 0x562bc3, 0x562bf2, 0x562c21, 0x562c50, 0x562c7f, 0x562cae,
+        0x562cdd, 0x562d0c, 0x562d3b, 0x562d96, 0x5d15ee, 0x5f4876, 0x5ffbb6 },
+      0x40a4c8, 0x6573ca, 0x65f514,
+      { 0x4638dc, 0x62170d }, 0x63ce2a,
+      0x4189e2,
+      0x562b10, 0x6a4f50,
+      0x419b02, 0x65f094, 0x65f0d8, 0x65f5f8, 0x65f5e8,
+      0x49c27f,
+      0x5a562a, 0x6829d8, 0,
+      { 0x65f088, 0x65f084, 0x65f154, 0x65f14c, 0x65f078, 0x65f0fc, 0x65f0e0, 0x65f080 } },
 };
 
 /* The build whose menu font function starts with "push esi; push <face name>" and which calls

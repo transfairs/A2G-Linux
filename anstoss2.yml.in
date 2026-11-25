@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # install.sh fills in the @...@ values and keeps the blocks "# @BEGIN <tags>" ... "# @END" of its variant
-# (CD: 1999 CD, GOG: GOG installer, DVD: 2007 CD on the "ANSTOSS 2007" DVD) and, if it could fetch
-# A2G-Icon's icon, those of ICONREPO
+# (CD: 1999 CD, GOG: GOG installer, DVD: 2007 CD on the "ANSTOSS 2007" DVD), of its Lutris (NATIVE: the
+# distribution package, FLATPAK: Lutris' Flatpak) and, if it could fetch A2G-Icon's icon, those of
+# ICONREPO. In the Flatpak, the placeholder HOST (in @...@, "flatpak-spawn --host ") runs a step on the
+# system, for the steps that need its programs (innoextract, ffmpeg, ImageMagick, zenity); the others
+# run inside the Flatpak.
 name: @NAME@
 game_slug: @SLUG@
 slug: @SLUG@
@@ -16,6 +19,20 @@ script:
     working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
     args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" @EXE@ /f
     prefix: $GAMEDIR
+    # Other programs Lutris offers when the game is started: the editor and, on the 1999 CD,
+    # "ANSTOSS 2: Verlängerung!" (verl.exe), each like the game in the 640x480 Wine desktop through
+    # a2start.exe
+    launch_configs:
+      - name: Anstoss 2 Editor
+        exe: $GAMEDIR/drive_c/windows/explorer.exe
+        working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
+        args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" Editor.exe
+# @BEGIN CD
+      - name: "ANSTOSS 2: Verlängerung!"
+        exe: $GAMEDIR/drive_c/windows/explorer.exe
+        working_dir: $GAMEDIR/drive_c/Spiele/Anstoss 2 Gold
+        args: /desktop=A2,640x480 "C:/Spiele/Anstoss 2 Gold/a2start.exe" verl.exe /f
+# @END
 
   wine:
     # Fixed Proton version (tested with it); with "GE-Proton (Latest)", umu would fetch every new release.
@@ -29,8 +46,11 @@ script:
 
   system:
     env:
+# @BEGIN NATIVE
       # GNOME 50: GTK3 inside Gamescope crashes (key "antialiasing" missing), hence a patched schema copy
+      # (in the Flatpak, Gamescope takes the schemas of its runtime)
       GSETTINGS_SCHEMA_DIR: $GAMEDIR/gschemas
+# @END
       # gsfix.so (Gamescope only): keep clicks on the window frame away from the game, set the
       # window title and disable Proton's Gamescope hack that strips title bars from dialogs;
       # the app ID links the window to Lutris' menu entry (name and icon in the dock)
@@ -49,9 +69,11 @@ script:
         name: create_prefix
         prefix: $GAMEDIR
 
+# @BEGIN NATIVE
     - execute:
         command: '"@PKG@/install.sh" --make-schemas "$GAMEDIR/gschemas"'
         disable_runtime: true  # glib-compile-schemas with the system's libraries
+# @END
 # @BEGIN CD DVD
 
     # Mount the converted CD copy as CD-ROM drive D: (2007 CD: the folder CD in the game folder, as
@@ -202,7 +224,7 @@ script:
     # and the installer's own files. Kept: rest.sav (GOG puts it under __support/save; without it a
     # new game crashes) and ExSpiel.sav (app/DATA.DEF, app/DATA.VER).
     - execute:
-        command: 'mkdir -p "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && "@INNOEXTRACT@" -s -m -g -d "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" "@SETUP@" && cd "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && cp __support/save/* . && cp -r app/DATA.DEF app/DATA.VER . && rm -rf __redist __support app commonappdata ddraw.dll game.sdb goggame-* && test -f run.exe && test -f rest.sav || { echo "Unpacking @SETUP@ failed"; exit 1; }'
+        command: 'mkdir -p "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && @HOST@"@INNOEXTRACT@" -s -m -g -d "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" "@SETUP@" && cd "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold" && cp __support/save/* . && cp -r app/DATA.DEF app/DATA.VER . && rm -rf __redist __support app commonappdata ddraw.dll game.sdb goggame-* && test -f run.exe && test -f rest.sav || { echo "Unpacking @SETUP@ failed"; exit 1; }'
         disable_runtime: true  # a system innoextract needs the system's libraries
 
     # What the GOG installer writes to the registry; the game reads its folder from InstalledTo
@@ -236,7 +258,7 @@ script:
     # launcher anstoss2.exe and its compatibility.dll stay unused. run.exe is taken out of its
     # PECRYPT32 shell (src/a2unpack.py; original kept as run.exe.vor-entpacken).
     - execute:
-        command: 'S="$GAMEDIR/drive_c/Spiele" && mkdir -p "$S" && rm -rf "$S/a2inno" && "@INNOEXTRACT@" -s -m -d "$S/a2inno" "@SETUP@" && mv "$S/a2inno/app" "$S/Anstoss 2 Gold" && rm -rf "$S/a2inno" && python3 "@PKG@/src/a2unpack.py" "$S/Anstoss 2 Gold/run.exe" || { echo "Unpacking @SETUP@ failed"; exit 1; }'
+        command: 'S="$GAMEDIR/drive_c/Spiele" && mkdir -p "$S" && rm -rf "$S/a2inno" && @HOST@"@INNOEXTRACT@" -s -m -d "$S/a2inno" "@SETUP@" && mv "$S/a2inno/app" "$S/Anstoss 2 Gold" && rm -rf "$S/a2inno" && python3 "@PKG@/src/a2unpack.py" "$S/Anstoss 2 Gold/run.exe" || { echo "Unpacking @SETUP@ failed"; exit 1; }'
         disable_runtime: true  # a system innoextract needs the system's libraries
 
     # What the 1999 setup writes to the registry; the game reads its folder from InstalledTo
@@ -266,6 +288,12 @@ script:
 
     - execute:
         command: 'cp "@PKG@/src/a2start.exe" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/" && cp "@PKG@/src/gsfix.so" "$GAMEDIR/"'
+# @BEGIN FLATPAK
+    # gsdisplay.so, which gsfix.so hands to the game: Proton's sub-sandbox in the Flatpak gets the
+    # desktop's DISPLAY otherwise (see README, lutris.net scripts)
+    - execute:
+        command: 'cp "@PKG@/src/gsdisplay.so" "$GAMEDIR/"'
+# @END
 
     # Bug fixes from A2G-Patch (--fixes, see README): sound on the default audio device, arrow buttons that
     # keep counting, undecodable videos skipped, no freeze after 24.9 days of uptime, no false disk space
@@ -288,7 +316,7 @@ script:
     # Indeo videos in the game folder (GOG; 2007 CD: in its folder CD; on the 1999 CD version only if
     # the setup copied videos)
     - execute:
-        command: '"@PKG@/install.sh" --convert-only "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        command: '@HOST@"@PKG@/install.sh" --convert-only "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true  # ffmpeg/ffprobe do not start with Lutris' runtime libraries
 
 # @BEGIN GOG DVD
@@ -320,10 +348,16 @@ script:
           - file: Eigene Dateien wählen (PNG und/oder SVG)
         preselect: game
     - execute:
-        command: 'python3 "@PKG@/src/a2assets.py" icon "$INPUT_ICON" "@PKG@/build/anstoss2.ico" "@ICONS@" "lutris_@SLUG@" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop.bmp"'
+        command: '@HOST@python3 "@PKG@/src/a2assets.py" icon "$INPUT_ICON" "@PKG@/build/anstoss2.ico" "@ICONS@" "lutris_@SLUG@" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold/a2desktop.bmp"'
         disable_runtime: true  # ImageMagick and zenity with the system's libraries
+# @BEGIN FLATPAK
+    # Lutris' Flatpak shows the icons of its own data folder; the desktop (menu entry, dock) those above
+    - execute:
+        command: 'mkdir -p "@LUTRISICONS@/128x128/apps" && cp "@ICONS@/128x128/apps/lutris_@SLUG@.png" "@LUTRISICONS@/128x128/apps/"'
+# @END
 
-    # Optional: data set (overwrites the game's files) and save games (existing ones are kept)
+    # Optional: data set (overwrites the game's files) and save games (*.gld, *.ver of verl.exe, with
+    # the game systems *.syt and training weeks *.woc; existing ones are kept)
     - input_menu:
         description: 'Einen Anstoss-2-Datensatz in den Spielordner importieren?'
         id: DATASET
@@ -333,11 +367,11 @@ script:
           - dir: Aus einem Ordner
         preselect: none
     - execute:
-        command: 'python3 "@PKG@/src/a2import.py" --overwrite --title "Anstoss-2-Datensatz" "$INPUT_DATASET" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        command: '@HOST@python3 "@PKG@/src/a2import.py" --overwrite --title "Anstoss-2-Datensatz" "$INPUT_DATASET" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true  # zenity does not start with Lutris' runtime libraries
 
     - input_menu:
-        description: 'Spielstände in den Spielordner importieren?'
+        description: 'Spielstände in den Spielordner importieren (*.gld, *.ver der Verlängerung, mit Spielsystemen *.syt und Trainingswochen *.woc)?'
         id: SAVES
         options:
           - none: Nicht importieren
@@ -345,7 +379,7 @@ script:
           - zip: Aus einer Zip-Datei
         preselect: none
     - execute:
-        command: 'python3 "@PKG@/src/a2import.py" --title "Anstoss-2-Spielstände" "$INPUT_SAVES" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
+        command: '@HOST@python3 "@PKG@/src/a2import.py" --saves --title "Anstoss-2-Spielstände" "$INPUT_SAVES" "$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"'
         disable_runtime: true  # zenity does not start with Lutris' runtime libraries
 
     # Optional balancing patches from A2G-Patch, one page each (see README)
@@ -458,6 +492,14 @@ script:
           - download: Neueste Version von GitHub herunterladen
           - file: Aus einer lokalen Datei (zip oder exe)
         preselect: none
+# @BEGIN NATIVE
     - execute:
         command: 'python3 "@PKG@/src/a2extras.py" --slug @SLUG@ "$GAMEDIR" "$INPUT_TRAINER"'
         disable_runtime: true  # system tools (ImageMagick) with the system's libraries
+# @END
+# @BEGIN FLATPAK
+    # --flatpak: a2run.sh starts the editor and the trainer inside Lutris' Flatpak, where the game's
+    # wineserver runs
+    - execute:
+        command: '@HOST@python3 "@PKG@/src/a2extras.py" --slug @SLUG@ --flatpak "$GAMEDIR" "$INPUT_TRAINER"'
+# @END

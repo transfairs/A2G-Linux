@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Copies a data set or save games into the game folder, from a zip file or a folder.
 
-    a2import.py [--overwrite] [--title TEXT] zip|dir|none <game folder> [source]
+    a2import.py [--overwrite] [--saves] [--title TEXT] zip|dir|none <game folder> [source]
 
 Without a source, a zenity dialog asks for the zip file or folder; cancelling skips the import.
 Names are matched against the game folder without regard to case (Wine ignores it, Linux does
 not), so DATA.DEF in the source replaces data.def instead of ending up next to it. Without
 --overwrite, existing files are kept. If everything in the source lies in one folder that the game
-folder does not have (e.g. "Spielstaende/"), its contents are copied instead.
+folder does not have (e.g. "Spielstaende/"), its contents are copied instead. With --saves, only
+save games are copied: those of the game (*.gld) and of "ANSTOSS 2: Verlängerung!" (*.ver), with the
+game systems (*.syt) and training weeks (*.woc) saved next to them.
 """
 
 import argparse
@@ -18,6 +20,10 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+
+# Save games of Anstoss 2 Gold (*.gld) and of "ANSTOSS 2: Verlängerung!" (*.ver), game systems and
+# training weeks
+SAVES = (".gld", ".ver", ".syt", ".woc")
 
 
 def zenity(args):
@@ -69,15 +75,20 @@ def unwrap(src, game):
     return src
 
 
-def merge(src, dst, overwrite, counts):
+def merge(src, dst, overwrite, counts, only=None):
     """Copies src into dst recursively, names matched without regard to case; existing files are kept unless
-    overwrite. Counts the added, replaced and kept files in counts."""
+    overwrite. With only (lower-case extensions), other files are left out, and so are folders without
+    such files. Counts the added, replaced and kept files in counts."""
     for name in sorted(os.listdir(src)):
         s = os.path.join(src, name)
         d = os.path.join(dst, match(dst, name))
         if os.path.isdir(s):
+            if only and not any(f.lower().endswith(only) for _, _, fs in os.walk(s) for f in fs):
+                continue
             os.makedirs(d, exist_ok=True)
-            merge(s, d, overwrite, counts)
+            merge(s, d, overwrite, counts, only)
+        elif only and not name.lower().endswith(only):
+            continue
         elif os.path.exists(d) and not overwrite:
             counts["kept"] += 1
         else:
@@ -85,11 +96,38 @@ def merge(src, dst, overwrite, counts):
             shutil.copyfile(s, d)
 
 
+def copy_in(mode, source, game, overwrite=False, only=None):
+    """Merges the zip file (mode "zip") or folder source into the game folder and returns the counts; a zip
+    file is extracted first and refused (SystemExit) if it holds an absolute path or ".."."""
+    counts = {"added": 0, "replaced": 0, "kept": 0}
+    with tempfile.TemporaryDirectory() as tmp:
+        if mode == "zip":
+            with zipfile.ZipFile(source) as z:
+                for info in z.infolist():
+                    parts = info.filename.replace("\\", "/").split("/")
+                    if info.filename.startswith("/") or ".." in parts:
+                        sys.exit(f"{source}: unsafe path in the zip file: {info.filename}")
+                z.extractall(tmp)
+            src = tmp
+        else:
+            src = source
+        merge(unwrap(src, game), game, overwrite, counts, only)
+    return counts
+
+
+def report(source, counts):
+    """The line printed after an import."""
+    return (
+        f"Imported from {source}: {counts['added']} added, {counts['replaced']} replaced, "
+        f"{counts['kept']} kept (already present)"
+    )
+
+
 def main():
-    """Merges the source (given, or chosen in a dialog) into the game folder and prints the counts; a zip
-    file is extracted first and refused if it holds an absolute path or ".."."""
+    """Merges the source (given, or chosen in a dialog) into the game folder and prints the counts."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--overwrite", action="store_true")
+    ap.add_argument("--saves", action="store_true", help="copy only save games (%s)" % ", ".join(SAVES))
     ap.add_argument("--title", default="Auswählen")
     ap.add_argument("mode", choices=["zip", "dir", "none"])
     ap.add_argument("game")
@@ -101,23 +139,7 @@ def main():
     if not source:
         print("Import skipped")
         return
-    counts = {"added": 0, "replaced": 0, "kept": 0}
-    with tempfile.TemporaryDirectory() as tmp:
-        if a.mode == "zip":
-            with zipfile.ZipFile(source) as z:
-                for info in z.infolist():
-                    parts = info.filename.replace("\\", "/").split("/")
-                    if info.filename.startswith("/") or ".." in parts:
-                        sys.exit(f"{source}: unsafe path in the zip file: {info.filename}")
-                z.extractall(tmp)
-            src = tmp
-        else:
-            src = source
-        merge(unwrap(src, a.game), a.game, a.overwrite, counts)
-    print(
-        f"Imported from {source}: {counts['added']} added, {counts['replaced']} replaced, "
-        f"{counts['kept']} kept (already present)"
-    )
+    print(report(source, copy_in(a.mode, source, a.game, a.overwrite, SAVES if a.saves else None)))
 
 
 if __name__ == "__main__":

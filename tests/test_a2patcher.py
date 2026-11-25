@@ -321,6 +321,138 @@ def test_convert_videos_fails(tmp_path, ffmpeg):
         p.convert_videos(str(tmp_path), ffmpeg)
 
 
+class Dialogs:
+    """Stand-ins for comdlg32, shell32, user32 and ole32: the calls of pick(), answered with path ("" cancels)."""
+
+    def __init__(self, path):
+        self.path, self.calls = path, []
+        fn = Kernel32.function
+        self.comdlg32 = type("comdlg32", (), {"GetOpenFileNameW": staticmethod(fn(self.open_file))})()
+        self.shell32 = type(
+            "shell32",
+            (),
+            {
+                "SHBrowseForFolderW": staticmethod(fn(self.browse)),
+                "SHGetPathFromIDListW": staticmethod(fn(self.path_of)),
+            },
+        )()
+        self.user32 = type("user32", (), {"SendMessageW": staticmethod(fn(self.send))})()
+        self.ole32 = type(
+            "ole32",
+            (),
+            {
+                "CoInitialize": staticmethod(lambda reserved: self.calls.append(("CoInitialize",))),
+                "CoTaskMemFree": staticmethod(lambda pidl: self.calls.append(("CoTaskMemFree", pidl.value))),
+            },
+        )()
+
+    def put(self, address):
+        text = ctypes.create_unicode_buffer(self.path)
+        ctypes.memmove(address, text, ctypes.sizeof(text))
+
+    def open_file(self, ref):
+        ofn = ref._obj
+        filters = ctypes.wstring_at(ofn.lpstrFilter, 33)
+        self.calls.append(("GetOpenFileNameW", ofn.lpstrTitle, ofn.lpstrInitialDir, filters, ofn.Flags))
+        if not self.path:
+            return 0
+        self.put(ofn.lpstrFile)
+        return 1
+
+    def browse(self, ref):
+        bi = ref._obj
+        self.calls.append(("SHBrowseForFolderW", bi.lpszTitle, bi.ulFlags))
+        bi.lpfn(7, 2, 0, 0)  # another message: nothing to do
+        bi.lpfn(7, 1, 0, 0)  # BFFM_INITIALIZED
+        return 1234 if self.path else None
+
+    def path_of(self, pidl, buffer):
+        self.calls.append(("SHGetPathFromIDListW", pidl.value))
+        buffer.value = self.path
+        return 1
+
+    def send(self, hwnd, msg, wparam, lparam):
+        self.calls.append(("SendMessageW", hwnd, msg, wparam, ctypes.wstring_at(lparam)))
+
+
+@pytest.fixture
+def dialogs(monkeypatch):
+    def make(path, home="/home/u"):
+        d = Dialogs(path)
+        monkeypatch.setattr(ctypes, "windll", d, raising=False)
+        monkeypatch.setenv("HOME", home)
+        return d
+
+    return make
+
+
+def test_pick_zip(dialogs):
+    d = dialogs("Z:\\home\\u\\set.zip")
+    assert p.pick("zip", "Anstoss-2-Datensatz") == "Z:\\home\\u\\set.zip"
+    assert d.calls == [
+        ("GetOpenFileNameW", "Anstoss-2-Datensatz", "/home/u", "Zip-Dateien (*.zip)\0*.zip;*.ZIP\0\0", 0x81804)
+    ]
+
+
+def test_pick_zip_cancelled(dialogs):
+    dialogs("", home="")
+    assert p.pick("zip", "x") == ""
+
+
+def test_pick_dir(dialogs):
+    d = dialogs("Z:\\home\\u\\saves")
+    assert p.pick("dir", "Anstoss-2-Spielstände") == "Z:\\home\\u\\saves"
+    assert d.calls == [
+        ("CoInitialize",),
+        ("SHBrowseForFolderW", "Anstoss-2-Spielstände", 0x41),
+        ("SendMessageW", 7, 0x400 + 103, 1, "/home/u"),
+        ("SHGetPathFromIDListW", 1234),
+        ("CoTaskMemFree", 1234),
+    ]
+
+
+def test_pick_dir_cancelled(dialogs):
+    d = dialogs("", home="relative")
+    assert p.pick("dir", "x") == ""
+    assert ("SendMessageW" not in [c[0] for c in d.calls]) and ("CoTaskMemFree" not in [c[0] for c in d.calls])
+
+
+def test_pick_dir_without_path(dialogs, monkeypatch):
+    d = dialogs("Z:\\x")
+    monkeypatch.setattr(d.shell32, "SHGetPathFromIDListW", lambda pidl, buffer: 0, raising=False)
+    assert p.pick("dir", "x") == ""
+
+
+def test_import_files(tmp_path, monkeypatch, capsys):
+    game, data, saves = tmp_path / "game", tmp_path / "data", tmp_path / "saves"
+    write(game / "DATA.DEF" / "A.SAV", b"old")
+    write(game / "a.gld", b"old")
+    write(data / "data.def" / "a.sav", b"new")
+    write(saves / "a.gld", b"new")
+    write(saves / "b.syt", b"new")
+    write(saves / "notes.txt", b"new")
+    picked = {"Anstoss-2-Datensatz": str(data), "Anstoss-2-Spielstände": str(saves)}
+    monkeypatch.setattr(p, "pick", lambda mode, title: picked[title])
+    p.import_files(str(game), answers(DATASET="dir", SAVES="dir"))
+    assert (game / "DATA.DEF" / "A.SAV").read_bytes() == b"new"
+    assert (game / "a.gld").read_bytes() == b"old"
+    assert sorted(f.name for f in game.iterdir()) == ["DATA.DEF", "a.gld", "b.syt"]
+    out = capsys.readouterr().out
+    assert "0 added, 1 replaced, 0 kept" in out and "1 added, 0 replaced, 1 kept" in out
+
+
+def test_import_files_skipped_and_refused(tmp_path, monkeypatch, capsys):
+    import zipfile
+
+    archive = tmp_path / "evil.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("../evil.gld", "x")
+    monkeypatch.setattr(p, "pick", lambda mode, title: "" if title == "Anstoss-2-Datensatz" else str(archive))
+    with pytest.raises(p.Failed, match="unsafe path"):
+        p.import_files(str(tmp_path), answers(DATASET="zip", SAVES="zip"))
+    assert "Anstoss-2-Datensatz: import skipped" in capsys.readouterr().out
+
+
 def answers(**given):
     a = {k: v[0] for k, v in p.QUESTIONS.items()}
     a.update(given)

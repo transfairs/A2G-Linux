@@ -8,7 +8,7 @@ These are the installers for Anstoss 2 Gold on the game page `anstoss-2-gold-edi
 
 ## The one `wineexec`
 
-The game needs work that Lutris cannot do in YAML: binary patches of the game's executable (bug fixes ported from the Windows patch A2G-Patch, plus optional balancing patches asked for in the input menus), text and quiz changes in its data files, and the conversion of five Indeo 3 videos (Wine has no Indeo decoder). For the 1999 CD, it also runs the original setup silently from a copy of the CD that is mounted as drive D:.
+The game needs work that Lutris cannot do in YAML: binary patches of the game's executable (bug fixes ported from the Windows patch A2G-Patch, plus optional balancing patches asked for in the input menus), text and quiz changes in its data files, and the conversion of five Indeo 3 videos (Wine has no Indeo decoder). For the 1999 CD, it also runs the original setup silently from a copy of the CD that is mounted as drive D:. If the player asks for it in the input menus, it imports a data set or save games from a zip file or folder picked in Wine's own file dialog; nothing is written outside `$GAMEDIR`.
 
 All of this runs inside the prefix as one Windows program, `src/a2patcher.exe`, so the host needs nothing. It is the Python source `src/a2patcher.py` and the scripts it calls, bundled with PyInstaller. The videos are converted by `src/ffmpeg.exe`, a minimal LGPL build (AVI, Indeo 3 decoder, MS Video 1 encoder) made by `.github/build-ffmpeg.sh` from the official ffmpeg 7.1.1 source tarball, checked by its SHA-256.
 
@@ -19,6 +19,10 @@ gh attestation verify A2G-Linux.tar.gz --repo transfairs/A2G-Linux
 ```
 
 The scripts download `releases/latest/download/A2G-Linux.tar.gz`, so a new release reaches the scripts without a new submission. Each release runs the full test suite first (`.github/workflows/tests.yml`), and the tests check that the scripts, the patcher and the documentation agree.
+
+## Launch options
+
+The game has two `launch_configs`, both through the same `a2start.exe` in the 640×480 Wine desktop: the game's editor (`Editor.exe`), and for the 1999 CD "ANSTOSS 2: Verlängerung!" (`verl.exe`, the earlier release of the game, which continues its save games).
 
 ## Runner and system options
 

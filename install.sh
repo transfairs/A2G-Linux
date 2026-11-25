@@ -5,6 +5,9 @@
 #
 #   ./install.sh --cd <mount point of the CD, DVD or ISO> [--cd-copy ~/Games/anstoss2-cd]
 #   ./install.sh --gog <setup_anstoss_2_gold_...exe>
+#   [--flatpak | --native]  Lutris to install into: by default the distribution package if it is
+#                           installed, else Lutris' Flatpak (net.lutris.Lutris) if that is, else the
+#                           distribution package is installed
 #
 # 1. CD: copies the CD to --cd-copy and converts the Indeo 3.2 videos to Microsoft Video 1.
 #    2007 CD (recognized by ANSTOSS_2_GOLD/Setup.exe): nothing is copied beforehand.
@@ -29,8 +32,11 @@
 #    set and save games, applies the bug fixes (src/a2patch.py --fixes --interviews, src/a2texts.py
 #    --typos) and the balancing patches, text changes and quiz (src/a2quiz.py) the player picks.
 #
-# Requires: lutris (native, not Flatpak), ffmpeg, ffprobe, gamescope, imagemagick, python3, zenity,
-# glib-compile-schemas; curl for downloading GE-Proton11-12.
+# Requires: lutris (the distribution package or the Flatpak), ffmpeg, ffprobe, imagemagick, python3,
+# zenity; with the distribution package also gamescope and glib-compile-schemas (in the Flatpak,
+# Gamescope comes from the extension org.freedesktop.Platform.VulkanLayer.gamescope); curl for
+# downloading GE-Proton11-12. In the Flatpak, the steps of the installer that need these programs run
+# on the system through flatpak-spawn --host, the others inside the Flatpak.
 # Without src/gsfix.so (in the release archive, not in the git repository): gcc and the Wayland headers.
 # GOG and 2007 CD: innoextract (Lutris brings its own in ~/.local/share/lutris/runtime). Missing ones
 # are installed with apt, dnf, pacman or zypper (with sudo); a missing GE-Proton11-12 is downloaded.
@@ -38,7 +44,8 @@ set -euo pipefail
 
 PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROTON="GE-Proton11-12"
-CD=""; GOG=""; DVD=""; CDCOPY="$HOME/Games/anstoss2-cd"
+CD=""; GOG=""; DVD=""; CDCOPY="$HOME/Games/anstoss2-cd"; LUTRIS_KIND=""
+FLATPAK_ID=net.lutris.Lutris
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -92,7 +99,9 @@ while [[ $# -gt 0 ]]; do
     --cd)      CD="$2"; shift 2 ;;
     --cd-copy) CDCOPY="$2"; shift 2 ;;
     --gog)     GOG="$2"; shift 2 ;;
-    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
+    --flatpak) LUTRIS_KIND=flatpak; shift ;;
+    --native)  LUTRIS_KIND=native; shift ;;
+    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
     *) die "Unknown option: $1" ;;
   esac
 done
@@ -103,7 +112,21 @@ done
 for f in a2start.exe a2setup.exe; do
   [[ -f "$PKG/src/$f" ]] || die "src/$f is missing next to install.sh"
 done
-LUTRIS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+has_flatpak() { command -v flatpak >/dev/null && flatpak info "$FLATPAK_ID" >/dev/null 2>&1; }
+if [[ -z "$LUTRIS_KIND" ]]; then
+  if command -v lutris >/dev/null || ! has_flatpak; then LUTRIS_KIND=native; else LUTRIS_KIND=flatpak; fi
+fi
+[[ "$LUTRIS_KIND" == native ]] || has_flatpak || die "Lutris' Flatpak ($FLATPAK_ID) is not installed"
+# Data folder of Lutris (games, runners, banners) and the icons of the desktop (menu entries, dock)
+ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
+if [[ "$LUTRIS_KIND" == flatpak ]]; then
+  LUTRIS_DATA="$HOME/.var/app/$FLATPAK_ID/data"
+  HOST="flatpak-spawn --host "  # runs an installer step on the system instead of inside the Flatpak
+else
+  LUTRIS_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+  HOST=""
+fi
+echo "Lutris: $([[ "$LUTRIS_KIND" == flatpak ]] && echo "Flatpak $FLATPAK_ID" || echo "distribution package")"
 # The "ANSTOSS 2007" DVD: Anstoss 2 Gold of 2007 is an Inno Setup installer in ANSTOSS_2_GOLD
 [[ -z "$CD" ]] || DVD="$(find "$(cd "$CD" && pwd)" -maxdepth 2 -ipath '*/anstoss_2_gold/setup.exe' 2>/dev/null | head -1)"
 
@@ -145,12 +168,16 @@ find_innoextract() {  # Lutris' own innoextract (static build) first, then the s
 }
 
 missing_deps() {  # the needs (first column of DEPS) that are not met
-  local t
-  for t in lutris ffmpeg gamescope python3 zenity glib-compile-schemas; do
+  local t progs=(ffmpeg python3 zenity)
+  [[ "$LUTRIS_KIND" == flatpak ]] || progs+=(lutris gamescope glib-compile-schemas)
+  for t in "${progs[@]}"; do
     command -v "$t" >/dev/null || echo "$t"
   done
   command -v magick >/dev/null || command -v convert >/dev/null || echo imagemagick
-  if [[ ! -f "$PKG/src/gsfix.so" ]]; then  # not in the git repository, only in the release archive
+  if [[ "$LUTRIS_KIND" == flatpak ]] && [[ ! -f "$PKG/src/gsdisplay.so" || "$PKG/src/gsdisplay.c" -nt "$PKG/src/gsdisplay.so" ]]; then
+    command -v gcc >/dev/null || echo gcc
+  fi
+  if [[ ! -f "$PKG/src/gsfix.so" || "$PKG/src/gsfix.c" -nt "$PKG/src/gsfix.so" ]]; then  # not in the git repository, only in the release archive
     command -v gcc >/dev/null || echo gcc
     printf '#include <wayland-client-core.h>\n#include <wayland-client-protocol.h>\n' |
       gcc -fsyntax-only -x c - 2>/dev/null || echo wayland
@@ -173,7 +200,7 @@ install_deps() {
   echo "Installing the packages ${pkgs[*]} with $pm ..."
   if [[ " ${needs[*]} " == *" lutris "* ]] && command -v flatpak >/dev/null &&
      flatpak info net.lutris.Lutris >/dev/null 2>&1; then
-    echo "(Lutris is installed as a Flatpak; the installation needs the distribution package as well.)"
+    echo "(Lutris is installed as a Flatpak as well; without --native, install.sh would use that.)"
   fi
   local sudo=(); [[ $EUID -eq 0 ]] || sudo=(sudo)
   case "$pm" in
@@ -192,8 +219,16 @@ command -v ffprobe >/dev/null || die "ffprobe is missing (it comes with ffmpeg)"
 codecs="$(ffmpeg -hide_banner -decoders 2>/dev/null; ffmpeg -hide_banner -encoders 2>/dev/null)"
 [[ "$codecs" == *" indeo3 "* && "$codecs" == *" msvideo1 "* ]] ||
   die "ffmpeg cannot convert the videos (Indeo 3 decoder or Microsoft Video 1 encoder missing). On Fedora, install ffmpeg from RPM Fusion."
-if [[ ! -f "$PKG/src/gsfix.so" ]]; then
+# Built anew if missing or older than its source (a git checkout; the release archive has both)
+if [[ ! -f "$PKG/src/gsfix.so" || "$PKG/src/gsfix.c" -nt "$PKG/src/gsfix.so" ]]; then
   gcc -O2 -Wall -shared -fPIC -o "$PKG/src/gsfix.so" "$PKG/src/gsfix.c" -ldl || die "could not build gsfix.so"
+fi
+if [[ "$LUTRIS_KIND" == flatpak ]] && [[ ! -f "$PKG/src/gsdisplay.so" || "$PKG/src/gsdisplay.c" -nt "$PKG/src/gsdisplay.so" ]]; then
+  gcc -O2 -Wall -shared -fPIC -o "$PKG/src/gsdisplay.so" "$PKG/src/gsdisplay.c" || die "could not build gsdisplay.so"
+fi
+if [[ "$LUTRIS_KIND" == flatpak ]] && ! flatpak list --columns=application | grep -q '^org.freedesktop.Platform.VulkanLayer.gamescope$'; then
+  echo "Note: Gamescope for Lutris' Flatpak is missing, the game will run in a 640x480 window."
+  echo "      Install it with: flatpak install flathub org.freedesktop.Platform.VulkanLayer.gamescope"
 fi
 
 # --- Inno Setup installers (GOG, 2007 CD) -----------------------------------------
@@ -282,7 +317,7 @@ else
 fi
 mkdir -p "$PKG/build"
 cp "$ICO" "$PKG/build/anstoss2.ico"
-TAGS="$VARIANT"
+TAGS="$VARIANT $([[ "$LUTRIS_KIND" == flatpak ]] && echo FLATPAK || echo NATIVE)"
 if python3 "$PKG/src/a2assets.py" icon-check; then TAGS+=" ICONREPO"; fi
 
 # --- Proton for Lutris ----------------------------------------------------------
@@ -319,9 +354,14 @@ awk -v tags="$TAGS" '
   /^# @END/ { skip = 0; next }
   !skip' "$PKG/anstoss2.yml.in" |
 sed -e "s|@PKG@|$(sedq "$PKG")|g" -e "s|@CDCOPY@|$(sedq "$CDCOPY")|g" -e "s|@SETUP@|$(sedq "$SETUP")|g" \
-    -e "s|@INNOEXTRACT@|$(sedq "${INNO:-}")|g" -e "s|@ICONS@|$(sedq "$LUTRIS_DATA/icons/hicolor")|g" -e "s|@SLUG@|$SLUG|g" -e "s|@NAME@|$NAME|g" \
+    -e "s|@INNOEXTRACT@|$(sedq "${INNO:-}")|g" -e "s|@ICONS@|$(sedq "$ICONS")|g" -e "s|@SLUG@|$SLUG|g" -e "s|@NAME@|$NAME|g" \
+    -e "s|@LUTRISICONS@|$(sedq "$LUTRIS_DATA/icons/hicolor")|g" -e "s|@HOST@|$HOST|g" \
     -e "s|@VERSION@|$VERSION|g" -e "s|@EXE@|$EXE|g" -e "s| @FIXES@|${FIXES:+ $FIXES}|g" > "$YML"
 ! grep -n '@[A-Z]*@' "$YML" || die "$YML: placeholder left"
 chmod +x "$PKG/install.sh"
 echo "Starting Lutris installation ($YML) ..."
-lutris -i "$YML"
+if [[ "$LUTRIS_KIND" == flatpak ]]; then
+  flatpak run "$FLATPAK_ID" -i "$YML"
+else
+  lutris -i "$YML"
+fi

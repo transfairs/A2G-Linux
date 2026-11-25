@@ -26,7 +26,7 @@ VARIANTS = {
 # variant of anstoss2.yml.in, of src/a2patcher.py
 PATCHER = {"CD": "cd", "DVD": "2007", "GOG": "gog"}
 OTHER_QUESTIONS = ("ICON", "DATASET", "SAVES", "QUIZ", "TRAINER")  # not patches
-HOST_ONLY = ("ICON", "DATASET", "SAVES", "TRAINER")  # need the system's programs: install.sh only
+HOST_ONLY = ("ICON", "TRAINER")  # need the system's programs: install.sh only
 
 
 def text(name):
@@ -38,10 +38,10 @@ def install_sh_fixes():
     return {m[1]: m[0] for m in re.findall(r'FIXES="([^"]*)"; VARIANT=(\w+)', text("install.sh"))}
 
 
-def render(variant, icon_repo=True):
+def render(variant, icon_repo=True, flatpak=False):
     """anstoss2.yml.in as install.sh writes it for variant (blocks kept or dropped, placeholders filled),
-    with A2G-Icon fetchable or not (block ICONREPO)."""
-    tags = {variant} | ({"ICONREPO"} if icon_repo else set())
+    with A2G-Icon fetchable or not (block ICONREPO), for the distribution package of Lutris or its Flatpak."""
+    tags = {variant, "FLATPAK" if flatpak else "NATIVE"} | ({"ICONREPO"} if icon_repo else set())
     lines, skip = [], False
     for line in text("anstoss2.yml.in").splitlines():
         if line.startswith("# @BEGIN "):
@@ -54,6 +54,7 @@ def render(variant, icon_repo=True):
     fixes = install_sh_fixes()[variant]
     out = out.replace(" @FIXES@", " " + fixes if fixes else "").replace("@EXE@", VARIANTS[variant][1])
     out = out.replace("@PKG@", "/pkg").replace("@ICONS@", "/data/icons/hicolor")
+    out = out.replace("@HOST@", "flatpak-spawn --host " if flatpak else "")
     assert "@SLUG@" in out
     return re.sub(r"@[A-Z]+@", "x", out)
 
@@ -320,3 +321,25 @@ def test_icon_png_is_the_svg_rendered(tmp_path, name):
     ]
     differing = subprocess.run(compare, capture_output=True, text=True).stderr.split()[0]
     assert float(differing) < 20, f"{differing} pixels differ, render src/{name}.png anew"
+
+
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_install_sh_script_for_lutris_flatpak(variant):
+    """install.sh with Lutris' Flatpak: steps that need the system's programs run there (flatpak-spawn
+    --host), the others inside the Flatpak; no schema copy (Gamescope takes the runtime's), gsdisplay.so
+    next to gsfix.so, a2run.sh starting the editor and the trainer inside the Flatpak."""
+    native, flatpak = render(variant), render(variant, flatpak=True)
+    assert "GSETTINGS_SCHEMA_DIR" in native and "GSETTINGS_SCHEMA_DIR" not in flatpak
+    assert "--make-schemas" in native and "--make-schemas" not in flatpak
+    native_commands = [v["command"] for kind, v in steps(native) if kind == "execute"]
+    assert not any("flatpak-spawn" in c or "gsdisplay.so" in c for c in native_commands)
+    commands = [v["command"] for kind, v in steps(flatpak) if kind == "execute"]
+    tools = ("a2assets.py", "a2import.py", "a2extras.py", "--convert-only", '"x" -s')
+    for c in commands:
+        for part in re.split(r"&&|\|\|", c):
+            if any(t in part for t in tools):
+                assert part.strip().startswith("flatpak-spawn --host "), part
+    assert any(c == 'cp "/pkg/src/gsdisplay.so" "$GAMEDIR/"' for c in commands)
+    assert any("a2extras.py" in c and " --flatpak " in c for c in commands)
+    script = yaml.safe_load(flatpak)["script"]
+    assert script["system"]["env"]["LD_PRELOAD"] == "$GAMEDIR/gsfix.so"

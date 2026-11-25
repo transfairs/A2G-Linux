@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Sets up and patches Anstoss 2 Gold inside the Wine prefix: the work of the lutris.net scripts.
 
-    a2patcher.exe <gog|2007|cd> <source> [--negotiation yes] [--goals yes] [--speeches yes]
-                  [--coaches yes] [--euro yes] [--centreback yes] [--names yes] [--quiz MODE]
+    a2patcher.exe <gog|2007|cd> <source> [--dataset zip|dir] [--saves zip|dir] [--negotiation yes]
+                  [--goals yes] [--speeches yes] [--coaches yes] [--euro yes] [--centreback yes]
+                  [--names yes] [--quiz MODE]
 
 The options are the questions of the installers (lowercase ids of their input menus), with their answers.
 
@@ -32,9 +33,10 @@ drive type in the registry stay, a CD that Wine had taken as D: before is replac
 Then, as install.sh does: a2start.exe into the game folder, the bug fixes (src/a2patch.py, for 2007
 and GOG also --disc-check and --v101), the Indeo 3 videos converted to MS Video 1 (Wine has no Indeo
 decoder; ffmpeg.exe from the release, a build with just these codecs), for 2007 and GOG the data of
-patch 1.01 (src/a2data101.py), for GOG the dialog styles of 1999 (src/a2resdll.py), the balancing
-patches asked for, the typing errors and the text switches asked for (src/a2texts.py) and the quiz
-(src/a2quiz.py).
+patch 1.01 (src/a2data101.py), for GOG the dialog styles of 1999 (src/a2resdll.py), a data set and
+save games (src/a2import.py) from a zip file or folder picked in Windows' dialog (Wine's, which
+reaches the home folder through drive Z:), the balancing patches asked for, the typing errors and
+the text switches asked for (src/a2texts.py) and the quiz (src/a2quiz.py).
 
 The game folder is C:\\Spiele\\Anstoss 2 Gold (--game for the tests). a2start.exe, a2setup.exe and
 ffmpeg.exe are taken from the folder of this program. Exit status 1 if a step fails.
@@ -42,6 +44,7 @@ ffmpeg.exe are taken from the folder of this program. Exit status 1 if a step fa
 
 import argparse
 import ctypes
+import ctypes.wintypes as wt
 import os
 import shutil
 import struct
@@ -51,6 +54,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import a2data101  # noqa: E402
+import a2import  # noqa: E402
 import a2patch  # noqa: E402
 import a2quiz  # noqa: E402
 import a2resdll  # noqa: E402
@@ -64,7 +68,8 @@ EXE = {"gog": "run.exe", "2007": "run.exe", "cd": "anstoss2.exe"}
 FIXES = {"gog": ["--disc-check", "--v101"], "2007": ["--disc-check", "--v101"], "cd": []}
 GOG_LEFT_OUT = {"__redist", "__support", "app", "commonappdata", "ddraw.dll", "game.sdb"}
 # the questions: id of the input menu, its answers (the first one is the default)
-QUESTIONS = {k.upper(): ("no", "yes") for k in a2patch.BALANCING}
+QUESTIONS = {"DATASET": ("none", "zip", "dir"), "SAVES": ("none", "dir", "zip")}
+QUESTIONS.update({k.upper(): ("no", "yes") for k in a2patch.BALANCING})
 QUESTIONS.update({k: ("no", "yes") for k in a2texts.QUESTIONS})
 QUESTIONS["QUIZ"] = tuple(a2quiz.MODES)
 CD_DRIVE = "d"
@@ -253,6 +258,115 @@ def convert_videos(folder, ffmpeg):
     print(f"{n} video(s) converted in {folder}")
 
 
+# the imports: question, title of the dialog, files replaced, only these files (a2import.py)
+IMPORTS = (("DATASET", "Anstoss-2-Datensatz", True, None), ("SAVES", "Anstoss-2-Spielstände", False, a2import.SAVES))
+WINFUNCTYPE = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+BROWSE_CALLBACK = WINFUNCTYPE(ctypes.c_int, wt.HWND, wt.UINT, wt.LPARAM, wt.LPARAM)
+
+
+class OPENFILENAMEW(ctypes.Structure):
+    """OPENFILENAMEW of commdlg.h (lpstrFilter and lpstrFile as addresses of buffers)."""
+
+    _fields_ = [
+        ("lStructSize", wt.DWORD),
+        ("hwndOwner", wt.HWND),
+        ("hInstance", wt.HINSTANCE),
+        ("lpstrFilter", ctypes.c_void_p),
+        ("lpstrCustomFilter", wt.LPWSTR),
+        ("nMaxCustFilter", wt.DWORD),
+        ("nFilterIndex", wt.DWORD),
+        ("lpstrFile", ctypes.c_void_p),
+        ("nMaxFile", wt.DWORD),
+        ("lpstrFileTitle", wt.LPWSTR),
+        ("nMaxFileTitle", wt.DWORD),
+        ("lpstrInitialDir", wt.LPCWSTR),
+        ("lpstrTitle", wt.LPCWSTR),
+        ("Flags", wt.DWORD),
+        ("nFileOffset", wt.WORD),
+        ("nFileExtension", wt.WORD),
+        ("lpstrDefExt", wt.LPCWSTR),
+        ("lCustData", wt.LPARAM),
+        ("lpfnHook", ctypes.c_void_p),
+        ("lpTemplateName", wt.LPCWSTR),
+        ("pvReserved", ctypes.c_void_p),
+        ("dwReserved", wt.DWORD),
+        ("FlagsEx", wt.DWORD),
+    ]
+
+
+class BROWSEINFOW(ctypes.Structure):
+    """BROWSEINFOW of shlobj.h."""
+
+    _fields_ = [
+        ("hwndOwner", wt.HWND),
+        ("pidlRoot", ctypes.c_void_p),
+        ("pszDisplayName", ctypes.c_void_p),
+        ("lpszTitle", wt.LPCWSTR),
+        ("ulFlags", wt.UINT),
+        ("lpfn", BROWSE_CALLBACK),
+        ("lParam", wt.LPARAM),
+        ("iImage", ctypes.c_int),
+    ]
+
+
+def pick(mode, title):
+    """A zip file (mode "zip") or folder chosen in Windows' dialog, starting in the home folder; "" if
+    cancelled."""
+    home = os.environ.get("HOME", "")
+    start = wine_path(home) if home.startswith("/") else None
+    path = ctypes.create_unicode_buffer(1024)
+    if mode == "zip":
+        ofn = OPENFILENAMEW()
+        ofn.lStructSize = ctypes.sizeof(ofn)
+        filters = ctypes.create_unicode_buffer("Zip-Dateien (*.zip)\0*.zip;*.ZIP\0\0")
+        ofn.lpstrFilter = ctypes.addressof(filters)
+        ofn.lpstrFile = ctypes.addressof(path)
+        ofn.nMaxFile = len(path)
+        ofn.lpstrInitialDir = start
+        ofn.lpstrTitle = title
+        ofn.Flags = 0x80000 | 0x1000 | 0x800 | 0x4  # OFN_EXPLORER, FILEMUSTEXIST, PATHMUSTEXIST, HIDEREADONLY
+        return path.value if ctypes.windll.comdlg32.GetOpenFileNameW(ctypes.byref(ofn)) else ""
+    user32 = ctypes.windll.user32
+    user32.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+    first = ctypes.create_unicode_buffer(start or "")
+
+    def init(hwnd, msg, lparam, data):
+        if msg == 1 and start:  # BFFM_INITIALIZED: BFFM_SETSELECTIONW with the path
+            user32.SendMessageW(hwnd, 0x400 + 103, 1, ctypes.addressof(first))
+        return 0
+
+    bi = BROWSEINFOW()
+    bi.pszDisplayName = ctypes.addressof(path)
+    bi.lpszTitle = title
+    bi.ulFlags = 0x1 | 0x40  # BIF_RETURNONLYFSDIRS, BIF_NEWDIALOGSTYLE
+    bi.lpfn = BROWSE_CALLBACK(init)
+    ctypes.windll.ole32.CoInitialize(None)
+    shell32 = ctypes.windll.shell32
+    shell32.SHBrowseForFolderW.restype = ctypes.c_void_p
+    pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+    if not pidl:
+        return ""
+    ok = shell32.SHGetPathFromIDListW(ctypes.c_void_p(pidl), path)
+    ctypes.windll.ole32.CoTaskMemFree(ctypes.c_void_p(pidl))
+    return path.value if ok else ""
+
+
+def import_files(game, a):
+    """The data set and the save games, each from a zip file or folder picked in a dialog if asked for
+    (answer zip or dir); nothing if the dialog is cancelled."""
+    for key, title, overwrite, only in IMPORTS:
+        if a[key] == "none":
+            continue
+        source = pick(a[key], title)
+        if not source:
+            print(f"{title}: import skipped")
+            continue
+        try:
+            print(a2import.report(source, a2import.copy_in(a[key], source, game, overwrite, only)))
+        except SystemExit as e:
+            raise Failed(str(e.code))
+
+
 def option(key):
     """The command line option of a switch of a2patch.py, a2texts.py."""
     return "--" + key.replace("_", "-")
@@ -269,6 +383,7 @@ def patch(variant, game, ffmpeg, a):
         run(a2data101.main, game)
     if variant == "gog":
         run(a2resdll.main, game)
+    import_files(game, a)
     for key in a2patch.BALANCING:
         if a[key.upper()] == "yes":
             run(a2patch.main, option(key), exe)

@@ -10,7 +10,14 @@
 set -euo pipefail
 
 SLUG=anstoss-2-gold  # set by a2extras.py (slug of the menu entries, see there)
+FLATPAK=0  # set by a2extras.py: 1 if the game was installed with Lutris' Flatpak
 GAMEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Lutris' Flatpak runs the game inside the Flatpak, so the editor and the trainer run there as well:
+# with its Proton, umu and Gamescope, and with the game's wineserver (Flatpak shares /tmp, where the
+# wineserver's socket lies, between the instances of one app)
+if [[ "$FLATPAK" == 1 && ! -f /.flatpak-info ]]; then
+  exec flatpak run --command=bash net.lutris.Lutris "$GAMEDIR/a2run.sh" "$@"
+fi
 LUTRIS="${XDG_DATA_HOME:-$HOME/.local/share}/lutris"
 GAME="$GAMEDIR/drive_c/Spiele/Anstoss 2 Gold"
 TRAINER="$GAMEDIR/drive_c/Spiele/A2G-Trainer"
@@ -39,12 +46,15 @@ case "${1:-}" in
   editor)
     # Like the game: 640x480 Wine desktop, 16 bit via a2start.exe ("läuft nur in HICOLOR!"),
     # scaled by Gamescope; gsfix.so (Gamescope only) as for the game, see README.
+    # In the Flatpak: Gamescope of its extension (gsfix.so knows it), the schemas of its runtime,
+    # gsdisplay.so next to gsfix.so; without the extension the editor runs in a 640x480 window.
     cd "$GAME"
-    export GSETTINGS_SCHEMA_DIR="$GAMEDIR/gschemas" GSFIX_TITLE="Anstoss 2 Editor" \
-           GSFIX_APPID="$SLUG-editor" GSFIX_WMNAME=gamescope
-    exec env LD_PRELOAD="$GAMEDIR/gsfix.so" gamescope -w 640 -h 480 -W 1280 -H 960 -S fit -F pixel -- \
-      "$UMU" "$GAMEDIR/drive_c/windows/explorer.exe" /desktop=A2Editor,640x480 \
-      "C:/Spiele/Anstoss 2 Gold/a2start.exe" Editor.exe
+    export GSFIX_TITLE="Anstoss 2 Editor" GSFIX_APPID="$SLUG-editor" GSFIX_WMNAME=gamescope
+    [[ -f /.flatpak-info ]] || export GSETTINGS_SCHEMA_DIR="$GAMEDIR/gschemas"
+    editor=("$UMU" "$GAMEDIR/drive_c/windows/explorer.exe" "/desktop=A2Editor,640x480"
+            "C:/Spiele/Anstoss 2 Gold/a2start.exe" Editor.exe)
+    if [[ -f /.flatpak-info ]] && ! command -v gamescope >/dev/null; then exec "${editor[@]}"; fi
+    exec env LD_PRELOAD="$GAMEDIR/gsfix.so" gamescope -w 640 -h 480 -W 1280 -H 960 -S fit -F pixel -- "${editor[@]}"
     ;;
   *)
     echo "Usage: $0 trainer|editor" >&2
