@@ -78,17 +78,23 @@ static char *resolve_appid(const char *pat) {
     return res;
 }
 
+/* Whether a path is the Gamescope binary. The Flatpak extension
+   org.freedesktop.Platform.VulkanLayer.gamescope (Lutris' Flatpak) has a shell script "gamescope"
+   that runs the binary as gamescope-brokey. Both the process (else LD_PRELOAD stays and reaches
+   Wine, where it made plain Wine hang before the game started) and the listeners (else the clicks
+   on the frame and the layout reach the game unfiltered) must match there. */
+static int is_gamescope(const char *path) {
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    return strcmp(base, "gamescope") == 0 || strcmp(base, "gamescope-brokey") == 0;
+}
+
 __attribute__((constructor)) static void init(void) {
     char exe[512];
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n <= 0) return;
     exe[n] = 0;
-    const char *base = strrchr(exe, '/');
-    base = base ? base + 1 : exe;
-    /* the Flatpak extension org.freedesktop.Platform.VulkanLayer.gamescope (Lutris' Flatpak) runs it
-       as gamescope-brokey; without the match there, LD_PRELOAD stays and reaches Wine, where it made
-       plain Wine hang before the game started */
-    if (strcmp(base, "gamescope") != 0 && strcmp(base, "gamescope-brokey") != 0) return;
+    if (!is_gamescope(exe)) return;
     active = 1;
     opt_title = getenv("GSFIX_TITLE");
     opt_appid = resolve_appid(getenv("GSFIX_APPID"));
@@ -186,10 +192,7 @@ static const struct pointer_listener wrap = {
 /* Only redirect listeners from the Gamescope binary itself, not those of libdecor/GTK. */
 static int from_gamescope(const void *impl) {
     Dl_info di;
-    if (!dladdr(impl, &di) || !di.dli_fname) return 0;
-    const char *base = strrchr(di.dli_fname, '/');
-    base = base ? base + 1 : di.dli_fname;
-    return strcmp(base, "gamescope") == 0;
+    return dladdr(impl, &di) && di.dli_fname && is_gamescope(di.dli_fname);
 }
 
 static int add_keyboard_listener(struct wl_proxy *proxy, void (**impl)(void), void *data,
