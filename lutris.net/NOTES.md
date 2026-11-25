@@ -12,7 +12,7 @@ The game needs work that Lutris cannot do in YAML: binary patches of the game's 
 
 All of this runs inside the prefix as one Windows program, `src/a2patcher.exe`, so the host needs nothing. It is the Python source `src/a2patcher.py` and the scripts it calls, bundled with PyInstaller. The videos are converted by `src/ffmpeg.exe`, a minimal LGPL build (AVI, Indeo 3 decoder, MS Video 1 encoder) made by `.github/build-ffmpeg.sh` from the official ffmpeg 7.1.1 source tarball, checked by its SHA-256.
 
-Neither file is in the repository. The release workflow (`.github/workflows/release.yml`) builds both on GitHub's runners for each tag and attaches a signed build provenance to them, to `src/gsfix.so` and to the archive. Anyone can check that a file was built by that workflow from this repository:
+Neither file is in the repository. The release workflow (`.github/workflows/release.yml`) builds both on GitHub's runners for each tag and attaches a signed build provenance to them, to `src/gsfix.so`, to `src/gsdisplay.so` and to the archive. Anyone can check that a file was built by that workflow from this repository:
 
 ```
 gh attestation verify A2G-Linux.tar.gz --repo transfairs/A2G-Linux
@@ -22,9 +22,10 @@ The scripts download `releases/latest/download/A2G-Linux.tar.gz`, so a new relea
 
 ## Runner and system options
 
-- **`version: wine-staging-x86_64`, not Proton.** lutris.net checks the version against `version-architecture` of its Wine runners and rejects plain `wine-staging` ("Wine version wine-staging is not available from Lutris"); the client strips the `-x86_64` again. In the Flatpak, Lutris starts Proton through umu in a sandbox of its own, where `DISPLAY` points to the desktop again instead of Gamescope: a black Gamescope window with the game beside it (flathub/net.lutris.Lutris#514). Plain Wine runs inside Gamescope as expected.
+- **No `version`, so Lutris' default GE-Proton (through umu).** Wine Staging (`wine-staging-x86_64`) is no option: under Wine 11.19 the mouse stops reaching the game after the loading screen of a new game, also without Gamescope.
 - **Gamescope** scales the 640×480 game up. Lutris leaves it out where it is not installed, and the game then runs in a 640×480 window.
 - **`LD_PRELOAD` of `gsfix.so`** (source `src/gsfix.c`) only takes effect in the Gamescope process and removes itself from `LD_PRELOAD` there, so Wine never loads it. It keeps clicks on the window frame away from the game (otherwise the mouse stops working after the window is moved), sets the window title and app ID, and passes the desktop's keyboard layout to Gamescope's Xwayland (otherwise the game gets US English).
+- **`gsdisplay.so`** (source `src/gsdisplay.c`, a constructor of four lines) is what `gsfix.so` puts into `LD_PRELOAD` for the game instead. In the Flatpak, umu runs Proton in the Steam Runtime, which pressure-vessel starts in a Flatpak sub-sandbox, and Flatpak sets `DISPLAY` there to the desktop's: a black Gamescope window with the game beside it (flathub/net.lutris.Lutris#514). `gsdisplay.so` copies `STEAM_GAME_DISPLAY_0`, which Gamescope sets to its own X server, back to `DISPLAY`. Since umu empties `LD_PRELOAD` when `XDG_CURRENT_DESKTOP` is `gamescope`, `gsfix.so` gives the game the desktop's value of it back.
 - **Registry:** 96 DPI, window colours and the title bar font, DirectDraw through GDI, `UseTakeFocus`, the title bar height of Windows 98 (the game sizes its windows for it), and the codec name `vidc.cram` for MS Video 1 (the game looks for that name before it plays the video of the cup draw).
 
 The full background is in the README, section "Installer scripts for lutris.net".

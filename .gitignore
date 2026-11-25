@@ -12,6 +12,7 @@ CLAUDE.local.md
 /build/
 src/*.so
 /.gsfix.so.tmp
+/.gsdisplay.so.tmp
 
 # Built by the release workflow (.github/build-patcher.sh, .github/build-ffmpeg.sh)
 /src/a2patcher.exe

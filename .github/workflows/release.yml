@@ -4,11 +4,12 @@ name: Release
 # lutris.net installer scripts download it from releases/latest/download/A2G-Linux.tar.gz, which
 # always points to the asset of the newest release (GitHub's own source archives have no such
 # "latest" URL). The archive also holds programs built here, which the lutris.net scripts use:
-# - src/gsfix.so, so they need neither gcc nor the Wayland headers. Built in an Ubuntu 22.04
-#   container, so it runs with any glibc from 2.34 on (dlsym), not only with the newest one of the runner.
+# - src/gsfix.so and src/gsdisplay.so, so they need neither gcc nor the Wayland headers. Built in an
+#   Ubuntu 22.04 container, so they run with any glibc from 2.34 on (dlsym), not only with the newest one
+#   of the runner.
 # - src/a2patcher.exe (PyInstaller, on Windows) and src/ffmpeg.exe (MinGW-w64), the Windows programs
 #   that do the installation's work inside the Wine prefix, so the scripts also run in Lutris' Flatpak.
-# All three and the archive get a signed build provenance (step "Attest build provenance").
+# All four and the archive get a signed build provenance (step "Attest build provenance").
 #
 # Before anything is published, the tests workflow runs for the tagged commit (all of tox), and the tag
 # must lie on main. The release notes list the commit subjects since the previous tag
@@ -66,7 +67,7 @@ jobs:
       - name: Release notes
         run: .github/release-notes.sh "$GITHUB_REF_NAME" > notes.md && cat notes.md
 
-      - name: Build gsfix.so
+      - name: Build gsfix.so and gsdisplay.so
         run: .github/build-gsfix.sh
 
       - name: Install MinGW-w64
@@ -85,7 +86,7 @@ jobs:
         run: |
           mkdir out
           git archive --format=tar --prefix=A2G-Linux/ "$GITHUB_REF_NAME" | tar -x -C out
-          cp src/gsfix.so src/a2patcher.exe src/ffmpeg.exe out/A2G-Linux/src/
+          cp src/gsfix.so src/gsdisplay.so src/a2patcher.exe src/ffmpeg.exe out/A2G-Linux/src/
           tar -czf A2G-Linux.tar.gz -C out A2G-Linux
 
       # Signed build provenance: anyone can check that these files were built by this workflow from
@@ -98,6 +99,7 @@ jobs:
             src/a2patcher.exe
             src/ffmpeg.exe
             src/gsfix.so
+            src/gsdisplay.so
             A2G-Linux.tar.gz
 
       # A release made by hand for this tag only gets the archive (replacing an older one), its notes stay

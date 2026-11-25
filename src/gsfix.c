@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /*
- * gsfix.so: LD_PRELOAD add-on for Gamescope (Wayland backend, GNOME). Four jobs:
+ * gsfix.so: LD_PRELOAD add-on for Gamescope (Wayland backend, GNOME). Five jobs:
  *
  * 1. Keep clicks on the window frame away from the game (always active).
  * 2. GSFIX_WMNAME: Gamescope registers with X as window manager "steamcompmgr". Proton detects
@@ -21,6 +21,11 @@
  *    once a window has the keyboard focus, but Wine reads the layout when it starts, so it is also
  *    loaded into Xwayland right before the game is started, with xkbcomp (which Xwayland itself
  *    needs, so it is always installed).
+ * 5. gsdisplay.so (only where it lies next to gsfix.so, as the lutris.net scripts put it): handed to
+ *    the game in LD_PRELOAD. In Lutris' Flatpak, Flatpak points DISPLAY in the Steam Runtime's
+ *    sub-sandbox to the desktop, and gsdisplay.so points it back to Gamescope (see there). umu
+ *    clears LD_PRELOAD when XDG_CURRENT_DESKTOP is "gamescope", which Gamescope sets for the game,
+ *    so the game gets the desktop's value back.
  *
  * About 1: Gamescope forwards every mouse click to the game, including clicks on the window
  * frame or title bar (libdecor). When the frame is dragged, GNOME takes over the mouse and the
@@ -32,7 +37,7 @@
  * Everything else is left unchanged.
  *
  * Only takes effect in the Gamescope process itself and removes itself from LD_PRELOAD there,
- * so that Xwayland, Wine and the game do not inherit it.
+ * so that Xwayland, Wine and the game do not inherit it (they get gsdisplay.so instead, see 5.).
  *
  * Build: gcc -O2 -Wall -shared -fPIC -o gsfix.so gsfix.c -ldl
  */
@@ -55,6 +60,8 @@
 
 static int active;
 static const char *opt_title, *opt_appid, *opt_wmname;
+static int hand_display;       /* gsdisplay.so is in LD_PRELOAD for the game (see 5.) */
+static char *host_desktop;     /* XDG_CURRENT_DESKTOP before Gamescope set it, or NULL */
 
 /* Desktop file ID for an app ID pattern (see 3.), or NULL. */
 static char *resolve_appid(const char *pat) {
@@ -100,6 +107,18 @@ __attribute__((constructor)) static void init(void) {
     opt_appid = resolve_appid(getenv("GSFIX_APPID"));
     opt_wmname = getenv("GSFIX_WMNAME");
     unsetenv("LD_PRELOAD");
+    /* 5.: gsdisplay.so from the folder of gsfix.so; Gamescope sets XDG_CURRENT_DESKTOP only in main() */
+    Dl_info di;
+    char path[4096];
+    if (dladdr((void *)init, &di) && di.dli_fname && strrchr(di.dli_fname, '/')) {
+        snprintf(path, sizeof path, "%.*s/gsdisplay.so", (int)(strrchr(di.dli_fname, '/') - di.dli_fname), di.dli_fname);
+        if (access(path, R_OK) == 0) {
+            setenv("LD_PRELOAD", path, 1);
+            const char *d = getenv("XDG_CURRENT_DESKTOP");
+            host_desktop = d ? strdup(d) : NULL;
+            hand_display = 1;
+        }
+    }
 }
 
 /* Gamescope binds wl_seat at version 8: events enter .. axis_value120 (10 of them). */
@@ -428,5 +447,9 @@ int execvp(const char *file, char *const argv[]) {
     static int (*real)(const char *, char *const[]);
     if (!real) real = (int (*)(const char *, char *const[]))dlsym(RTLD_NEXT, "execvp");
     if (active && getenv("GAMESCOPE_WAYLAND_DISPLAY")) load_keymap();
+    if (active && hand_display) {  /* 5.: the desktop's value, so umu keeps LD_PRELOAD */
+        if (host_desktop) setenv("XDG_CURRENT_DESKTOP", host_desktop, 1);
+        else unsetenv("XDG_CURRENT_DESKTOP");
+    }
     return real(file, argv);
 }

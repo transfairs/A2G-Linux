@@ -11,7 +11,7 @@
 #    A2G_GOG_SETUP, A2G_2007_DVD, A2G_INNOEXTRACT, A2G_PATCHER or else from where Lutris and install.sh
 #    put them: ~/Games/anstoss-2-gold (backup of anstoss2.exe), ~/Downloads (GOG installer), a mounted
 #    DVD under /run/media/$USER, Lutris' innoextract, ../A2G-Patcher
-# 4. gsfix.so as the release builds it (Docker), at most glibc 2.34
+# 4. gsfix.so and gsdisplay.so as the release builds them (Docker), at most glibc 2.34
 # 5. the release archive from the working tree: every file the lutris.net scripts use is in it
 # 6. the lutris.net scripts of the last tag (those submitted) still work with this archive
 # 7. the release notes the release workflow will write, and commit subjects that read badly there
@@ -99,18 +99,18 @@ fi
 
 # --- 4. gsfix.so ------------------------------------------------------------------------------
 if $quick; then
-  report SKIP "gsfix.so (Docker)" "--quick"
+  report SKIP "gsfix.so, gsdisplay.so (Docker)" "--quick"
 elif ! command -v docker > /dev/null; then
-  report SKIP "gsfix.so (Docker)" "docker not installed"
+  report SKIP "gsfix.so, gsdisplay.so (Docker)" "docker not installed"
 elif .github/build-gsfix.sh "$tmp/gsfix.so" > "$tmp/gsfix.log" 2>&1; then
-  glibc="$(objdump -T "$tmp/gsfix.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+  glibc="$(objdump -T "$tmp/gsfix.so" "$tmp/gsdisplay.so" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
   if [[ "$(printf '%s\n' "$glibc" GLIBC_2.34 | sort -V | tail -1)" == GLIBC_2.34 ]]; then
-    report PASS "gsfix.so (Docker)" "needs $glibc"
+    report PASS "gsfix.so, gsdisplay.so (Docker)" "needs $glibc"
   else
-    report FAIL "gsfix.so (Docker)" "needs $glibc, more than 2.34"
+    report FAIL "gsfix.so, gsdisplay.so (Docker)" "needs $glibc, more than 2.34"
   fi
 else
-  report FAIL "gsfix.so (Docker)" "build failed"
+  report FAIL "gsfix.so, gsdisplay.so (Docker)" "build failed"
   tail -20 "$tmp/gsfix.log"
 fi
 
@@ -120,9 +120,9 @@ mkdir -p "$out"
 git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do
   [[ -e "$f" ]] && cp --parents "$f" "$out/"
 done
-[[ -f "$tmp/gsfix.so" ]] && cp "$tmp/gsfix.so" "$out/src/gsfix.so"
+[[ -f "$tmp/gsfix.so" ]] && cp "$tmp/gsfix.so" "$tmp/gsdisplay.so" "$out/src/"
 built() {  # files the release workflow builds into the archive, not in the repository
-  [[ "$1" == src/gsfix.so || "$1" == src/a2patcher.exe || "$1" == src/ffmpeg.exe ]]
+  [[ "$1" == src/gsfix.so || "$1" == src/gsdisplay.so || "$1" == src/a2patcher.exe || "$1" == src/ffmpeg.exe ]]
 }
 needed() {  # the paths a lutris.net script uses inside the archive ($CACHE/a2g/...), build/ is made there
   # shellcheck disable=SC2016  # $CACHE is the literal text in the scripts

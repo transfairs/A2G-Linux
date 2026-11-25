@@ -19,7 +19,7 @@ runner: wine
 script:
   files:
     # This repository (helper programs, patches), the newest release; with src/a2patcher.exe,
-    # src/ffmpeg.exe and src/gsfix.so, built by the release workflow
+    # src/ffmpeg.exe, src/gsfix.so and src/gsdisplay.so, built by the release workflow
     - a2gsrc:
         url: https://github.com/transfairs/A2G-Linux/releases/latest/download/A2G-Linux.tar.gz
         filename: a2g-linux.tar.gz
@@ -39,11 +39,9 @@ script:
     gogid: 1808817480
 
   wine:
-    # Wine Staging ("-x86_64": lutris.net only accepts versions with it), not Proton: Lutris runs
-    # Proton through umu, which in Lutris' Flatpak starts the game in a sandbox of its own where
-    # DISPLAY points to the desktop again instead of Gamescope (black Gamescope window, the game
-    # beside it). install.sh uses GE-Proton11-12.
-    version: wine-staging-x86_64
+    # No version: Lutris' default "GE-Proton (Latest)", the newest GE-Proton through umu (Lutris
+    # 0.5.23 can't download a pinned GE-Proton; install.sh pins GE-Proton11-12). Not Wine Staging:
+    # under Wine 11.19 the mouse stops reaching the game after the loading screen of a new game.
     dxvk: false
     vkd3d: false
     overrides:
@@ -54,7 +52,8 @@ script:
     env:
       # gsfix.so (Gamescope only): keep clicks on the window frame away from the game, set the
       # window title and disable Proton's Gamescope hack that strips title bars from dialogs;
-      # the app ID links the window to Lutris' menu entry (name and icon in the dock)
+      # the app ID links the window to Lutris' menu entry (name and icon in the dock). It hands
+      # gsdisplay.so to the game, which in Lutris' Flatpak points DISPLAY back to Gamescope
       LD_PRELOAD: $GAMEDIR/gsfix.so
       GSFIX_TITLE: Anstoss 2 Gold
       GSFIX_APPID: net.lutris.anstoss-2-gold-edition-[0-9]*
@@ -84,9 +83,12 @@ script:
         name: create_prefix
         prefix: $GAMEDIR
 
-    # gsfix.so next to the game
+    # gsfix.so and gsdisplay.so next to the game
     - merge:
         src: $CACHE/a2g/src/gsfix.so
+        dst: $GAMEDIR
+    - merge:
+        src: $CACHE/a2g/src/gsdisplay.so
         dst: $GAMEDIR
 
     # 96 DPI, no font smoothing

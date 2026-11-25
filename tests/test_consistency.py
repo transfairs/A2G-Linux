@@ -150,9 +150,14 @@ def test_lutris_script_runs_in_lutris_flatpak(variant):
     kinds = {kind for kind, _ in steps(lutris_script(variant))}
     assert kinds <= {"extract", "insert-disc", "task", "merge", "input_menu"}
     assert not re.search(r"\$HOME|XDG_|disable_runtime|python3|bash ", lutris_script(variant))
-    # lutris.net compares the Wine version with "version-architecture" of its runners (games/util/installer.py
-    # in lutris/website): plain "wine-staging" is "not available from Lutris"
-    assert script["wine"]["version"] == "wine-staging-x86_64"
+    # No Wine version: Lutris' default, the newest GE-Proton through umu (Wine Staging 11.19 loses the mouse
+    # after the loading screen of a new game; Lutris 0.5.23 can't download a pinned GE-Proton)
+    assert "version" not in script["wine"]
+    # gsfix.so for Gamescope, and next to it gsdisplay.so, which gsfix.so hands to the game: in the Flatpak,
+    # Proton's sub-sandbox gets the desktop's DISPLAY otherwise
+    assert script["system"]["env"]["LD_PRELOAD"] == "$GAMEDIR/gsfix.so"
+    merged = [v["src"] for kind, v in steps(lutris_script(variant)) if kind == "merge" and v["dst"] == "$GAMEDIR"]
+    assert {"$CACHE/a2g/src/gsfix.so", "$CACHE/a2g/src/gsdisplay.so"} <= set(merged)
 
 
 @pytest.mark.parametrize("variant", VARIANTS)
