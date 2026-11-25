@@ -150,6 +150,9 @@ def test_lutris_script_runs_in_lutris_flatpak(variant):
     kinds = {kind for kind, _ in steps(lutris_script(variant))}
     assert kinds <= {"extract", "insert-disc", "task", "merge", "input_menu"}
     assert not re.search(r"\$HOME|XDG_|disable_runtime|python3|bash ", lutris_script(variant))
+    # lutris.net compares the Wine version with "version-architecture" of its runners (games/util/installer.py
+    # in lutris/website): plain "wine-staging" is "not available from Lutris"
+    assert script["wine"]["version"] == "wine-staging-x86_64"
 
 
 @pytest.mark.parametrize("variant", VARIANTS)

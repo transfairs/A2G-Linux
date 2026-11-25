@@ -33,11 +33,11 @@ script:
     prefix: $GAMEDIR
 
   wine:
-    # Wine Staging (lutris.net's "wine-staging", Lutris adds "-x86_64"), not Proton: Lutris runs
+    # Wine Staging ("-x86_64": lutris.net only accepts versions with it), not Proton: Lutris runs
     # Proton through umu, which in Lutris' Flatpak starts the game in a sandbox of its own where
     # DISPLAY points to the desktop again instead of Gamescope (black Gamescope window, the game
     # beside it). install.sh uses GE-Proton11-12.
-    version: wine-staging
+    version: wine-staging-x86_64
     dxvk: false
     vkd3d: false
     overrides:
@@ -299,7 +299,7 @@ script:
     # The manager course quiz from A2G-Patch (src/a2quiz.py, see README): answers of today, 150 new
     # questions, both or neither
     - input_menu:
-        description: 'Quiz der Managerfortbildung auffrischen? Mit heutigen Antworten sind 77 Fragen auf dem Stand von 2026: Meistertitel, Rekorde und Regeln von heute, Fragen zu Ämtern und Personen von damals nennen ihr Jahr, und vier Antworten, die schon 1998 falsch waren, sind berichtigt. Dazu oder statt dessen kommen 150 neue Fragen von der WM 1998 bis zur WM 2026.'
+        description: 'Quiz der Managerfortbildung auffrischen?'
         id: QUIZ
         options:
           - original: Original beibehalten
